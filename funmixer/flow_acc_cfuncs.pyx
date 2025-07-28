@@ -11,7 +11,6 @@ from libcpp.unordered_set cimport unordered_set
 import numpy as np
 cimport numpy as cnp
 cimport cython
-from libc.stdlib cimport malloc, free
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
@@ -128,8 +127,8 @@ def make_donor_array(cnp.int64_t[:] r, int[:] delta) -> int[:] :
         D[delta[r[i]] + w[r[i]]] = i
         w[r[i]] += 1
 
-    return D    
-
+    return D 
+     
 @cython.boundscheck(False)  # Deactivate bounds checking
 @cython.wraparound(False)   # Deactivate negative indexing.
 def build_ordered_list_iterative(cnp.int64_t[:] receivers, cnp.ndarray[cnp.int64_t, ndim=1] baselevel_nodes) -> int[:] :
@@ -175,6 +174,37 @@ def build_ordered_list_iterative(cnp.int64_t[:] receivers, cnp.ndarray[cnp.int64
 
 @cython.boundscheck(False)  # Deactivate bounds checking
 @cython.wraparound(False)   # Deactivate negative indexing.
+def accumulate_flow(
+    cnp.int64_t[:] receivers,
+    int[:] ordered, 
+    cnp.ndarray[double, ndim=1] weights
+):
+    """
+    Accumulates flow along the stack of nodes in topological order, given the receiver array,
+    the ordered list of nodes, and a weights array which contains the contribution from each node.
+
+    Args:
+        receivers: The receiver array (i.e., receiver[i] is the ID
+        of the node that receives the flow from the i'th node).
+        ordered: The ordered list of nodes.
+        weights: The weights array (i.e., the contribution from each node).
+    """
+    cdef int n = receivers.shape[0]
+    cdef cnp.ndarray[double, ndim=1] accum = weights.copy()
+    cdef int i
+    cdef cnp.int64_t donor, recvr
+
+    # Accumulate flow along the stack from upstream to downstream
+    for i in range(n - 1, -1, -1):
+        donor = ordered[i]
+        recvr = receivers[donor]
+        if donor != recvr:
+            accum[recvr] += accum[donor]
+
+    return accum
+
+@cython.boundscheck(False)  # Deactivate bounds checking
+@cython.wraparound(False)   # Deactivate negative indexing.
 def build_samplesite_graph(
     cnp.int64_t[:] receivers, 
     cnp.ndarray[cnp.int64_t, ndim=1] baselevel_nodes, 
@@ -189,9 +219,6 @@ def build_samplesite_graph(
         of the node that receives the flow from the i'th node).
         baselevel_nodes: The baselevel nodes to start from (i.e., sink-nodes).
         samplesite_nodes: The sample site nodes to assign to each subbasin.
-
-    Returns:
-        A map of subbasins, where each subbasin is assigned a unique ID from 0 (baselevel) to n (number of subbasins).
     """
     # Initialize variables
     cdef int n = len(receivers)
@@ -239,34 +266,3 @@ def build_samplesite_graph(
                 q.push(m)  # Add the donor to the queue
 
     return labels
-
-@cython.boundscheck(False)  # Deactivate bounds checking
-@cython.wraparound(False)   # Deactivate negative indexing.
-def accumulate_flow(
-    cnp.int64_t[:] receivers,
-    int[:] ordered, 
-    cnp.ndarray[double, ndim=1] weights
-):
-    """
-    Accumulates flow along the stack of nodes in topological order, given the receiver array,
-    the ordered list of nodes, and a weights array which contains the contribution from each node.
-
-    Args:
-        receivers: The receiver array (i.e., receiver[i] is the ID
-        of the node that receives the flow from the i'th node).
-        ordered: The ordered list of nodes.
-        weights: The weights array (i.e., the contribution from each node).
-    """
-    cdef int n = receivers.shape[0]
-    cdef cnp.ndarray[double, ndim=1] accum = weights.copy()
-    cdef int i
-    cdef cnp.int64_t donor, recvr
-
-    # Accumulate flow along the stack from upstream to downstream
-    for i in range(n - 1, -1, -1):
-        donor = ordered[i]
-        recvr = receivers[donor]
-        if donor != recvr:
-            accum[recvr] += accum[donor]
-
-    return accum
