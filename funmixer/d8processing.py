@@ -72,7 +72,9 @@ def check_d8(
         and np.all(arr[:, -1] == 0)
     )
     if not boundaries_are_zero:
-        print("BOUNDARY CHECK RESULT: Fail. Boundaries of D8 flow direction grid are not all 0.")
+        print(
+            "BOUNDARY CHECK RESULT: Fail. Boundaries of D8 flow direction grid are not all 0."
+        )
     else:
         print("BOUNDARY CHECK RESULT: Pass.")
     # Return True if both boundaries_are_zero and values_are_valid
@@ -165,9 +167,13 @@ def snap_to_drainage(
             raise ValueError(f"Nudge for sample code {code} must be a 2D vector.")
         all_nudges[code] = nudge
 
-    initial = np.column_stack((noisy_samples["x_coordinate"], noisy_samples["y_coordinate"]))
+    initial = np.column_stack(
+        (noisy_samples["x_coordinate"], noisy_samples["y_coordinate"])
+    )
     # Nudge the sample according to the entry in "nudges"
-    nudged = initial + np.array([all_nudges[code] for code in noisy_samples["Sample.Code"]])
+    nudged = initial + np.array(
+        [all_nudges[code] for code in noisy_samples["Sample.Code"]]
+    )
     snapped = np.zeros((noisy_samples.shape[0], 2))
     # Loop through each sample site finding the nearest channel
     print("Looping through every sample snapping to drainage...")
@@ -195,7 +201,9 @@ def snap_to_drainage(
                 lw=1,
             )
         # Add the nudged samples to the plot
-        plt.scatter(nudged[:, 0], nudged[:, 1], c="purple", label="Nudged Sample", marker="x")
+        plt.scatter(
+            nudged[:, 0], nudged[:, 1], c="purple", label="Nudged Sample", marker="x"
+        )
         # Add the noisy samples to the plot
         plt.scatter(
             noisy_samples["x_coordinate"],
@@ -213,7 +221,9 @@ def snap_to_drainage(
                 lw=1,
             )
         # Add the snapped samples to the plot
-        plt.scatter(snapped[:, 0], snapped[:, 1], c="green", label="Snapped Sample", marker="x")
+        plt.scatter(
+            snapped[:, 0], snapped[:, 1], c="green", label="Snapped Sample", marker="x"
+        )
         plt.legend()
         # Add the sample codes to the plot for each noisy sample
         for i in range(noisy_samples.shape[0]):
@@ -277,6 +287,9 @@ class D8Accumulator:
     -------
     accumulate(weights : np.ndarray = None)
         Accumulate flow on the grid using the D8 flow directions
+
+    indices_to_coords(rows: np.ndarray, cols: np.ndarray)
+        Convert column and row indices to x and y coordinates for the centre point of a pixel.
     """
 
     def __init__(self, filename: str):
@@ -292,8 +305,12 @@ class D8Accumulator:
         self._arr, self._ds = read_geo_file(filename)
         self._arr = self._arr.astype(int)
         self._receivers = cf.d8_to_receivers(self.arr)
-        self._baselevel_nodes = np.where(self.receivers == np.arange(len(self.receivers)))[0]
-        self._order = cf.build_ordered_list_iterative(self.receivers, self.baselevel_nodes)
+        self._baselevel_nodes = np.where(
+            self.receivers == np.arange(len(self.receivers))
+        )[0]
+        self._order = cf.build_ordered_list_iterative(
+            self.receivers, self.baselevel_nodes
+        )
 
     def accumulate(self, weights: np.ndarray = None) -> np.ndarray:
         """Accumulate flow on the grid using the D8 flow directions
@@ -360,7 +377,43 @@ class D8Accumulator:
         miny = maxy + trsfm[5] * self.arr.shape[0]
         return [minx, maxx, miny, maxy]
 
-    def indices_to_coords(self, rows: np.ndarray, cols: np.ndarray) -> Tuple[np.ndarray]:
+    def _check_valid_node(self, node: int) -> None:
+        """Checks if a node is valid"""
+        if node < 0 or node >= self.arr.size:
+            raise ValueError("Node is out of bounds")
+        if not isinstance(node, int) and not np.issubdtype(type(node), np.integer):
+            raise TypeError("Node must be an integer")
+
+    def node_to_coord(self, node: int) -> Tuple[float, float]:
+        """Converts a node index to a coordinate pair for the centre of the pixel"""
+        self._check_valid_node(node)
+        _, ncols = self.arr.shape
+        x_ind = node % ncols
+        y_ind = node // ncols
+        ulx, dx, _, uly, _, dy = self.ds.GetGeoTransform()
+        x_coord = ulx + dx * x_ind
+        y_coord = uly + dy * y_ind
+        # Add dx/2 and dy/2 to get to the center of the pixel from the upper left corner
+        x_coord += dx / 2
+        y_coord += dy / 2  # recall that dy is negative
+
+        return x_coord, y_coord
+
+    def coord_to_node(self, x: float, y: float) -> int:
+        """Converts a coordinate pair to a node index"""
+        nrows, ncols = self.arr.shape
+        ulx, dx, _, uly, _, dy = self.ds.GetGeoTransform()
+        # Casting to int rounds towards zero ('floor' for positive numbers; e.g, int(3.9) = 3)
+        x_ind = int((x - ulx) / dx)
+        y_ind = int((y - uly) / dy)
+        out = y_ind * ncols + x_ind
+        if out > ncols * nrows or out < 0:
+            raise ValueError("Coordinate is out of bounds")
+        return out
+
+    def indices_to_coords(
+        self, rows: np.ndarray, cols: np.ndarray
+    ) -> Tuple[np.ndarray]:
         """
         Convert column and row indices to x and y coordinates for the centre point of a pixel in the geospatial grid
 
