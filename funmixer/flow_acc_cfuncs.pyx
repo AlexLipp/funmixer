@@ -1,12 +1,14 @@
 """
 This module contains functions for building a topological stack of nodes in a flow direction array.
-For speed and memory efficiency, the functions are written in Cython.
+For speed and memory efficiency, the functions are written in Cython. The algorithm for building a 
+sample network of subbasins was created by Richard Barnes in C++ and translated to Cython by Alex Lipp.
 """
 # distutils: language = c++
 from libcpp.stack cimport stack
 from libcpp.queue cimport queue
 from libcpp.vector cimport vector
 from libcpp.unordered_set cimport unordered_set
+from libcpp.unordered_map cimport unordered_map
 
 import numpy as np
 cimport numpy as cnp
@@ -203,12 +205,112 @@ def accumulate_flow(
 
     return accum
 
+#### All the code below is adapted from the C++ code by Richard Barnes ####
+
+ROOT_NODE_NAME = "##ROOT##"
+UNSET_NODE_NAME = "##UNSET##"
+NO_DOWNSTREAM_NEIGHBOUR = 2**32 - 1  # Maximum value for a 64-bit integer, used to indicate no downstream neighbour
+
+cdef class SampleData:
+    cdef public str name
+    cdef public cnp.float64_t x
+    cdef public cnp.float64_t y
+
+    def __cinit__(self):
+        self.name = UNSET_NODE_NAME
+        self.x = -1.
+        self.y = -1.
+
+    # Define a factory method to create a SampleData instance from a dictionary
+    @staticmethod
+    def from_dict(data):
+        cdef SampleData sample = SampleData()
+        sample.name = data.get("name", UNSET_NODE_NAME)
+        sample.x = data.get("x", -1.)
+        sample.y = data.get("y", -1.)
+        return sample
+
+# Define the NativeSampleNode class
+cdef class NativeSampleNode:
+    cdef public SampleData data
+    cdef public cnp.int64_t downstream_node
+    cdef public list[str] upstream_nodes
+    cdef public cnp.int64_t area
+    cdef public cnp.int64_t total_upstream_area
+    cdef public cnp.int64_t label
+
+    def __cinit__(self):
+        self.data = SampleData()
+        self.downstream_node = NO_DOWNSTREAM_NEIGHBOUR
+        self.upstream_nodes = []
+        self.area = 0
+        self.total_upstream_area = 0
+        self.label = -1  # Default label, will be set later
+
+    @staticmethod
+    def make_root_node():
+        cdef NativeSampleNode temp
+        temp = NativeSampleNode()
+        temp.label = 0  # Root node label
+        temp.data.name = ROOT_NODE_NAME
+        return temp
+
+    @staticmethod
+    def make_w_downstream_and_sample(cnp.int64_t downstream_node, SampleData sample_data):
+        cdef NativeSampleNode temp = NativeSampleNode()
+        temp.downstream_node = downstream_node
+        temp.data = sample_data
+        return temp
+
+@cython.boundscheck(False)  # Deactivate bounds checking
+@cython.wraparound(False)   # Deactivate negative indexing.
+def calculate_total_upstream_areas(list[NativeSampleNode] sample_graph):
+    """Calculates the total upstream areas for each sample node in the sample graph.
+    Args:
+        sample_graph: A list of NativeSampleNode objects representing the sample graph.
+    """
+    cdef int n = len(sample_graph)
+    # Count how many upstream neighbours we're waiting on
+    cdef int[:] deps = np.zeros(n, dtype=np.int32)
+    cdef int i, c
+    cdef NativeSampleNode self
+
+    # Initialize the dependencies array
+    for i in range(n):
+        deps[i] = len(sample_graph[i].upstream_nodes)
+
+    # Find cells with no upstream neighbours
+    cdef queue[int] q
+    for i in range(n):
+        if deps[i] == 0:
+            q.push(i)
+
+    while not q.empty():
+        c = q.front()  # Get the front of the queue
+        q.pop()  # Remove the front element from the queue
+        self = sample_graph[c]  # Get the current sample node
+        # Add my own area
+        self.total_upstream_area += self.area
+
+        if self.downstream_node == NO_DOWNSTREAM_NEIGHBOUR:
+            continue  # If no downstream neighbour, skip to the next iteration
+
+        # Add my area to downstream neighbour
+        sample_graph[self.downstream_node].total_upstream_area += self.total_upstream_area
+
+        # My downstream node no longer depends on me
+        deps[self.downstream_node] -= 1
+
+        if deps[self.downstream_node] == 0:
+            q.push(self.downstream_node)  # If no more dependencies, add to the queue
+
+
 @cython.boundscheck(False)  # Deactivate bounds checking
 @cython.wraparound(False)   # Deactivate negative indexing.
 def build_samplesite_graph(
     cnp.int64_t[:] receivers, 
     cnp.ndarray[cnp.int64_t, ndim=1] baselevel_nodes, 
-    cnp.ndarray[cnp.int64_t, ndim=1] samplesite_nodes
+    dict[int, dict[str,object]] sample_dict,
     ):
     """
     Creates a map of subbasins, where each subbasin is assigned a unique ID from 0 (baselevel) to n (number of subbasins). 
@@ -218,24 +320,26 @@ def build_samplesite_graph(
         receivers: The receiver array (i.e., receiver[i] is the ID
         of the node that receives the flow from the i'th node).
         baselevel_nodes: The baselevel nodes to start from (i.e., sink-nodes).
-        samplesite_nodes: The sample site nodes to assign to each subbasin.
+        sample_dict: A dictionary mapping sample site nodes to their metadata,
+        where keys are node indices and metadata is a dictionary with keys "name", "x", and "y".
     """
     # Initialize variables
-    cdef int n = len(receivers)
+    cdef int nr = len(receivers)
     cdef int[:] n_donors = count_donors(receivers)
     cdef int[:] delta = ndonors_to_delta(n_donors)
     cdef int[:] donors = make_donor_array(receivers, delta)
-    cdef cnp.ndarray[double, ndim=1] labels = np.zeros(n, dtype=np.float64)  # Initialize labels to 0
-    cdef int label_value = 0  # Start labeling from 0
+    cdef cnp.ndarray[cnp.int64_t, ndim=1] labels = np.zeros(nr, dtype=np.int64)
     cdef int node, m
-
-    # Create unordered_set for samplesite_nodes to check membership efficiently
-    cdef unordered_set[cnp.int64_t] samplesite_set
-    for i in range(samplesite_nodes.shape[0]):
-        samplesite_set.insert(samplesite_nodes[i])
-
-    # Initialize queue for breadth-first search
+    cdef cnp.int64_t my_new_label = 0
+    cdef cnp.int64_t my_current_label
+    cdef NativeSampleNode parent
+    cdef SampleData data
+    # Initialize the sample parent graph as a list of NativeSampleNode
+    cdef list sample_parent_graph = []
+    # Initialize a queue for breadth-first search
     cdef queue[int] q
+    # Push a root node into the list
+    sample_parent_graph.append(NativeSampleNode.make_root_node())
 
     # Add baselevel nodes to the queue
     for b in baselevel_nodes:
@@ -248,15 +352,23 @@ def build_samplesite_graph(
         q.pop()
 
         # Check if the node is a sample site
-        if samplesite_set.count(node) != 0:
-            label_value += 1  # Increment the label value for the next sample site
-            labels[node] = label_value  # Assign the new label to the sample site node
-        else:
-            # If the node is not a sample site, assign it the label of its receiver
-            labels[node] = labels[receivers[node]] if receivers[node] != node else 0
+        if node in sample_dict:
+            # Extract sample data from the sample_dict
+            data = SampleData.from_dict(sample_dict[node])
+            # Create a new sample node with the sample data
+            my_new_label = len(sample_parent_graph)
+            my_current_label = labels[node]
+            parent = sample_parent_graph[my_current_label]
+            parent.upstream_nodes.append(data.name)  # Add the sample site name to the parent node's upstream nodes
+            sample_parent_graph.append(
+                NativeSampleNode.make_w_downstream_and_sample(my_current_label, data)
+            )  # Create a new sample node with the sample data
+            # Update the label for the sample site node
+            labels[node] = my_new_label  # Assign the new label to the sample site node
 
         # Get the label of the current node
         my_label = labels[node]
+        sample_parent_graph[my_label].area += 1  # Increment the area of the sample node
 
         # Loop through the donors of the node and add them to the queue
         for n in range(delta[node], delta[node + 1]):
@@ -265,4 +377,15 @@ def build_samplesite_graph(
                 labels[m] = my_label  # Assign the label of the node to the donor
                 q.push(m)  # Add the donor to the queue
 
-    return labels
+    # Calculate the total upstream areas for each sample node having built the sample parent graph
+    calculate_total_upstream_areas(sample_parent_graph)
+    # Check that the total upstream area of the root node is equal to the number of pixels
+    if sample_parent_graph[0].total_upstream_area != nr:
+        raise ValueError("Total upstream area of root node does not match the number of pixels in the flow direction array!")
+
+    # Loop through the sample parent graph to assign labels
+    for i in range(len(sample_parent_graph)):
+        # Assign the label to the sample parent node
+        sample_parent_graph[i].label = i  # Assign the label to the sample parent node
+
+    return labels, sample_parent_graph
