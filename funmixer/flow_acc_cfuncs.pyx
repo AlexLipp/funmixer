@@ -4,7 +4,9 @@ For speed and memory efficiency, the functions are written in Cython.
 """
 # distutils: language = c++
 from libcpp.stack cimport stack
+from libcpp.queue cimport queue
 from libcpp.vector cimport vector
+from libcpp.unordered_set cimport unordered_set
 
 import numpy as np
 cimport numpy as cnp
@@ -153,29 +155,90 @@ def build_ordered_list_iterative(cnp.int64_t[:] receivers, cnp.ndarray[cnp.int64
     cdef int j = 0 # The index in the stack (i.e., topological order)
     cdef int b, node, m
     # Queue for breadth-first search
-    cdef int *q = <int *> malloc(n * sizeof(int))
-    cdef int front = 0
-    cdef int back = 0
+    cdef queue[int] q
 
     # Add baselevel nodes to the stack
     for b in baselevel_nodes:
-        q[back] = b
-        back += 1
+        q.push(b)  # Add the baselevel node to the queue
 
-    while front < back:
-        node = q[front] # Get the node from the queue
-        front += 1 # Increment the front of the queue (i.e., pop the node)
+    while not q.empty():
+        node = q.front()  # Get the node from the front of the queue
+        q.pop()  # Remove the node from the queue
         ordered_list[j] = node # Add the node to the stack
         j += 1 # Increment the stack index.
         # Loop through the donors of the node
         for n in range(delta[node], delta[node+1]):
             m = donors[n]
             if m != node:
-                q[back] = m
-                back += 1
-
-    free(q)
+                q.push(m)  # Add the donor to the queue
     return ordered_list
+
+@cython.boundscheck(False)  # Deactivate bounds checking
+@cython.wraparound(False)   # Deactivate negative indexing.
+def build_samplesite_graph(
+    cnp.int64_t[:] receivers, 
+    cnp.ndarray[cnp.int64_t, ndim=1] baselevel_nodes, 
+    cnp.ndarray[cnp.int64_t, ndim=1] samplesite_nodes
+    ):
+    """
+    Creates a map of subbasins, where each subbasin is assigned a unique ID from 0 (baselevel) to n (number of subbasins). 
+    Each subbasin has at its mouth a sample site node. 
+
+    Args: 
+        receivers: The receiver array (i.e., receiver[i] is the ID
+        of the node that receives the flow from the i'th node).
+        baselevel_nodes: The baselevel nodes to start from (i.e., sink-nodes).
+        samplesite_nodes: The sample site nodes to assign to each subbasin.
+
+    Returns:
+        A map of subbasins, where each subbasin is assigned a unique ID from 0 (baselevel) to n (number of subbasins).
+    """
+    # Initialize variables
+    cdef int n = len(receivers)
+    cdef int[:] n_donors = count_donors(receivers)
+    cdef int[:] delta = ndonors_to_delta(n_donors)
+    cdef int[:] donors = make_donor_array(receivers, delta)
+    cdef cnp.ndarray[double, ndim=1] labels = np.zeros(n, dtype=np.float64)  # Initialize labels to 0
+    cdef int label_value = 0  # Start labeling from 0
+    cdef int node, m
+
+    # Create unordered_set for samplesite_nodes to check membership efficiently
+    cdef unordered_set[cnp.int64_t] samplesite_set
+    for i in range(samplesite_nodes.shape[0]):
+        samplesite_set.insert(samplesite_nodes[i])
+
+    # Initialize queue for breadth-first search
+    cdef queue[int] q
+
+    # Add baselevel nodes to the queue
+    for b in baselevel_nodes:
+        q.push(b)
+
+    # Perform a breadth-first search to label subbasins
+    while not q.empty():
+        # Get the node from the front of the queue
+        node = q.front()
+        q.pop()
+
+        # Check if the node is a sample site
+        if samplesite_set.count(node) != 0:
+            label_value += 1  # Increment the label value for the next sample site
+            labels[node] = label_value  # Assign the new label to the sample site node
+        else:
+            # If the node is not a sample site, assign it the label of its receiver
+            labels[node] = labels[receivers[node]] if receivers[node] != node else 0
+
+        # Get the label of the current node
+        my_label = labels[node]
+
+        # Loop through the donors of the node and add them to the queue
+        for n in range(delta[node], delta[node + 1]):
+            m = donors[n]
+            if m != node:
+                labels[m] = my_label  # Assign the label of the node to the donor
+                q.push(m)  # Add the donor to the queue
+
+    return labels
 
 @cython.boundscheck(False)  # Deactivate bounds checking
 @cython.wraparound(False)   # Deactivate negative indexing.
