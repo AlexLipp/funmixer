@@ -1,31 +1,34 @@
 """
-This module contains cython functions for building a topological stack of nodes in a D8 flow direction array. 
-These are used for efficiently calculating flow accumulation and flow direction arrays.
+This module contains functions for building a topological stack of nodes in a flow direction array.
+For speed and memory efficiency, the functions are written in Cython.
 """
-# distutils: language=c++
+# distutils: language = c++
+from libcpp.stack cimport stack
+from libcpp.vector cimport vector
 
 import numpy as np
-cimport numpy as np
+cimport numpy as cnp
 cimport cython
 from libc.stdlib cimport malloc, free
 
-@cython.boundscheck(False)  # Deactivate bounds checking
-@cython.wraparound(False)   # Deactivate negative indexing.
-def d8_to_receivers(np.ndarray[long, ndim=2] arr) -> long[:] :
+@cython.boundscheck(False)
+@cython.wraparound(False)
+def d8_to_receivers(cnp.ndarray[cnp.int64_t, ndim=2] arr) -> cnp.int64_t[:]:
     """
     Converts a D8 flow direction array to a receiver array.
 
     Args:
         arr: A D8 flow direction array.
-    
+
     Returns:
         A receiver array.
     """
-    cdef int nrows = arr.shape[0]
-    cdef int ncols = arr.shape[1]
-    cdef long[:] receivers = np.empty(nrows * ncols, dtype=long)
-    cdef int i, j
-    cdef int cell
+    cdef Py_ssize_t nrows = arr.shape[0]
+    cdef Py_ssize_t ncols = arr.shape[1]
+    cdef cnp.int64_t[:] receivers = np.empty(nrows * ncols, dtype=np.int64)
+    cdef Py_ssize_t i, j
+    cdef Py_ssize_t cell
+
     for i in range(nrows):
         for j in range(ncols):
             cell = i * ncols + j
@@ -52,9 +55,10 @@ def d8_to_receivers(np.ndarray[long, ndim=2] arr) -> long[:] :
                 raise ValueError(f"Invalid flow direction value: {arr[i, j]}")
     return receivers
 
+
 @cython.boundscheck(False)  # Deactivate bounds checking
 @cython.wraparound(False)   # Deactivate negative indexing.
-def count_donors(long[:] r) -> int[:] :
+def count_donors(cnp.int64_t[:] r) -> int[:] :
     """
     Counts the number of donors that each cell has.
 
@@ -70,7 +74,6 @@ def count_donors(long[:] r) -> int[:] :
     for j in range(n):
         d[r[j]] += 1
     return d    
-
 
 @cython.boundscheck(False)  # Deactivate bounds checking
 @cython.wraparound(False)   # Deactivate negative indexing.
@@ -99,7 +102,7 @@ def ndonors_to_delta(int[:] nd) -> int[:] :
 
 @cython.boundscheck(False)  # Deactivate bounds checking
 @cython.wraparound(False)   # Deactivate negative indexing.
-def make_donor_array(long[:] r, int[:] delta) -> int[:] :
+def make_donor_array(cnp.int64_t[:] r, int[:] delta) -> int[:] :
     """
     Makes the array of donors. This is indexed according to the delta
     array. i.e., the donors to node i are stored in the range delta[i] to delta[i+1].
@@ -127,7 +130,7 @@ def make_donor_array(long[:] r, int[:] delta) -> int[:] :
 
 @cython.boundscheck(False)  # Deactivate bounds checking
 @cython.wraparound(False)   # Deactivate negative indexing.
-def build_ordered_list_iterative(long[:] receivers, np.ndarray[long, ndim=1] baselevel_nodes) -> int[:] :
+def build_ordered_list_iterative(cnp.int64_t[:] receivers, cnp.ndarray[cnp.int64_t, ndim=1] baselevel_nodes) -> int[:] :
     """
     Builds the ordered list of nodes in topological order, given the receiver array.
     Starts at the baselevel nodes and works upstream in a wave building a 
@@ -177,9 +180,9 @@ def build_ordered_list_iterative(long[:] receivers, np.ndarray[long, ndim=1] bas
 @cython.boundscheck(False)  # Deactivate bounds checking
 @cython.wraparound(False)   # Deactivate negative indexing.
 def accumulate_flow(
-    long[:] receivers, 
+    cnp.int64_t[:] receivers,
     int[:] ordered, 
-    np.ndarray[double, ndim=1] weights
+    cnp.ndarray[double, ndim=1] weights
 ):
     """
     Accumulates flow along the stack of nodes in topological order, given the receiver array,
@@ -192,9 +195,9 @@ def accumulate_flow(
         weights: The weights array (i.e., the contribution from each node).
     """
     cdef int n = receivers.shape[0]
-    cdef np.ndarray[double, ndim=1] accum = weights.copy()
+    cdef cnp.ndarray[double, ndim=1] accum = weights.copy()
     cdef int i
-    cdef long donor, recvr
+    cdef cnp.int64_t donor, recvr
 
     # Accumulate flow along the stack from upstream to downstream
     for i in range(n - 1, -1, -1):
@@ -204,4 +207,3 @@ def accumulate_flow(
             accum[recvr] += accum[donor]
 
     return accum
-
