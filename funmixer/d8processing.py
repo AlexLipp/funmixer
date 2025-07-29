@@ -127,15 +127,11 @@ def snap_to_drainage(
         nudges (Dict[str, np.ndarray]): Dictionary of "nudges" for each sample site. The keys are the sample codes and the values are 2D vectors of dx and dy.
     """
     # Load in real samples
-    noisy_samples = pd.read_csv(sample_sites_filename, sep=" ")
-    # Check that noisy samples has the correct columns
-    if (
-        "x_coordinate" not in noisy_samples.columns
-        or "y_coordinate" not in noisy_samples.columns
-        or "Sample.Code" not in noisy_samples.columns
-    ):
+    noisy_samples = pd.read_csv(sample_sites_filename)
+    # Check that noisy samples has at least three columns. First one should be sample code and second and third must be numeric coordinates
+    if noisy_samples.shape[1] < 3:
         raise ValueError(
-            "Noisy samples must have 'x_coordinate', 'y_coordinate' and 'Sample.Code' columns."
+            "Sample sites file must have at least three columns: sample code, x coordinate, y coordinate."
         )
 
     print("Building D8 accumulator...")
@@ -156,7 +152,7 @@ def snap_to_drainage(
     chan_coords = np.column_stack((chan_x, chan_y))
 
     # Initiate an empty dictionary of "nudges", where each sample site is a key pointing to 2D vector of 0s
-    all_nudges = {code: np.zeros(2) for code in noisy_samples["Sample.Code"]}
+    all_nudges = {code: np.zeros(2) for code in noisy_samples.iloc[:, 0].values}
     # Update the nudges dictionary with the nudges argument
     print("Applying nudges...")
     for code, nudge in nudges.items():
@@ -167,15 +163,16 @@ def snap_to_drainage(
             raise ValueError(f"Nudge for sample code {code} must be a 2D vector.")
         all_nudges[code] = nudge
 
-    initial = np.column_stack((noisy_samples["x_coordinate"], noisy_samples["y_coordinate"]))
+    # Get x and y coordinates of the noisy samples from second and third columns
+    initial = np.column_stack((noisy_samples.iloc[:, 1], noisy_samples.iloc[:, 2]))
     # Nudge the sample according to the entry in "nudges"
-    nudged = initial + np.array([all_nudges[code] for code in noisy_samples["Sample.Code"]])
+    nudged = initial + np.array([all_nudges[code] for code in noisy_samples.iloc[:, 0].values])
     snapped = np.zeros((noisy_samples.shape[0], 2))
     # Loop through each sample site finding the nearest channel
     print("Looping through every sample snapping to drainage...")
     for i in range(noisy_samples.shape[0]):
-        code = noisy_samples["Sample.Code"][i]
-        sample = [noisy_samples["x_coordinate"][i], noisy_samples["y_coordinate"][i]]
+        code = noisy_samples.iloc[i, 0]
+        sample = [noisy_samples.iloc[i, 1], noisy_samples.iloc[i, 2]]
         # Nudge the sample according to the entry in "nudges"
         sample = sample + all_nudges[code]
         distances = np.sqrt(np.sum((chan_coords - sample) ** 2, axis=1))
@@ -191,8 +188,8 @@ def snap_to_drainage(
         # Add a grey line between the noisy and nudged samples
         for i in range(noisy_samples.shape[0]):
             plt.plot(
-                [noisy_samples["x_coordinate"][i], nudged[i, 0]],
-                [noisy_samples["y_coordinate"][i], nudged[i, 1]],
+                [noisy_samples.iloc[i, 1], nudged[i, 0]],
+                [noisy_samples.iloc[i, 2], nudged[i, 1]],
                 c="grey",
                 lw=1,
             )
@@ -200,8 +197,8 @@ def snap_to_drainage(
         plt.scatter(nudged[:, 0], nudged[:, 1], c="purple", label="Nudged Sample", marker="x")
         # Add the noisy samples to the plot
         plt.scatter(
-            noisy_samples["x_coordinate"],
-            noisy_samples["y_coordinate"],
+            noisy_samples.iloc[:, 1],
+            noisy_samples.iloc[:, 2],
             c="red",
             label="Original Sample",
             marker="x",
@@ -220,9 +217,9 @@ def snap_to_drainage(
         # Add the sample codes to the plot for each noisy sample
         for i in range(noisy_samples.shape[0]):
             plt.text(
-                noisy_samples["x_coordinate"][i],
-                noisy_samples["y_coordinate"][i],
-                noisy_samples["Sample.Code"][i],
+                noisy_samples.iloc[i, 1],
+                noisy_samples.iloc[i, 2],
+                noisy_samples.iloc[i, 0],
                 fontsize=8,
             )
         plt.axis("equal")
@@ -230,12 +227,12 @@ def snap_to_drainage(
 
     if save:
         # Replace the x and y coordinates of the noisy samples with the snapped ones
-        noisy_samples["x_coordinate"] = snapped[:, 0]
-        noisy_samples["y_coordinate"] = snapped[:, 1]
+        noisy_samples.iloc[:, 1] = snapped[:, 0]
+        noisy_samples.iloc[:, 2] = snapped[:, 1]
         # Save the snapped samples to a file with a suffix "snapped" before the file extension
         stem = Path(sample_sites_filename).stem
-        outfile = stem + "_snapped.dat"
-        noisy_samples.to_csv(outfile, sep=" ", index=False)
+        outfile = stem + "_snapped.csv"
+        noisy_samples.to_csv(outfile, index=False)
 
 
 class D8Accumulator:
@@ -433,11 +430,11 @@ def get_sample_graph(
         2D numpy array which maps each node onto a sub-basin via its label.
     """
     # Read the D8 flow direction grid and accumulate flow
-    acc = D8Accumulator("data/d8.tiff")
+    acc = D8Accumulator(flowdirs_filename)
     acc.accumulate()
 
     # Read the sample data file and build a sample site graph
-    samples = pd.read_csv("data/sample_data.dat", sep=" ")
+    samples = pd.read_csv(sample_data_filename)
 
     # Check that second and third columns are numeric
     if not pd.api.types.is_numeric_dtype(samples.iloc[:, 1]) or not pd.api.types.is_numeric_dtype(

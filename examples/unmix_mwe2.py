@@ -10,13 +10,13 @@ logger.addHandler(logging.StreamHandler())
 
 def main() -> None:
     flowdirs_filename = "data/d8.asc"
-    data_filename = "data/sample_data.dat"
+    data_filename = "data/sample_data.csv"
     excluded_elements = ["Bi", "S"]
 
     sample_network, labels = funmixer.get_sample_graph(flowdirs_filename, data_filename)
 
     funmixer.plot_network(sample_network)
-    obs_data = pd.read_csv(data_filename, delimiter=" ")
+    obs_data = pd.read_csv(data_filename)
     obs_data = obs_data.drop(columns=excluded_elements)
 
     problem = funmixer.SampleNetworkUnmixer(sample_network=sample_network)

@@ -1,4 +1,4 @@
-# Unmixing nested observed concentrations in river networks for source regions
+# Funmixer - Unmixing nested observed concentrations in river networks for source regions
 
 This repository implements an efficient solution to the unmixing of nested concentrations in a (river) network using convex optimisation. The method is described in our [peer reviewed article in __Water Resources Research__](https://doi.org/10.1029/2023WR036159) 
 
@@ -8,7 +8,7 @@ The algorithm requires:
 
 1) A GDAL readable raster of D8 flow directions. We use the ESRI/Arc D8 convention of representing directions with increasing powers of 2 (i.e., 1, 2, 4, 8 etc.) with sink pixels indicated by 0. We assume that every cell in the domain eventually flows into a sink node within the domain (or is itself a sink node). This assumption requires that **every boundary pixel is set to be a sink**.
 
-2) A **space**-delimited file which contains the names, locations and geochemical observations at the sample sites. Sample names are given in column `Sample.Code`, and the x and y-coordinates of the sample sites in columns `x_coordinate` and `y_coordinate`. The x and y-coordinates of the sample sites need to be in the same reference system as the D8 raster. It is assumed that the sample sites have already been manually aligned onto the drainage network. Subsequent columns contain the name of a given tracer (e.g., `Mg`) and their concentrations (arbitrary units).
+2) A `.csv` file which contains the names, locations and geochemical observations at the sample sites. Sample names (e.g., 'SampleA') are expected in **column 1** and the x and y-coordinates of the sample sites in **columns 2 and 3**. The x and y-coordinates of the sample sites need to be in the same reference system as the D8 raster. It is assumed that the sample sites have already been manually aligned onto the drainage network. Subsequent columns contain the name of a given tracer (e.g., `Mg`) and their concentrations (arbitrary units).
 
 `funmixer` does include some basic data preprocessing functions that can be used to align the sample sites to the drainage network and fix the boundary conditions of the D8 raster. An example of use is given in the `examples/` directory. Example, valid, datasets are contained in `data/d8.asc` and `sample_data.dat`. 
 
@@ -20,7 +20,7 @@ Some common data input problems can be solved by:
 
 ## Installation
 
-The following assumes a UNIX operating systems. If running Windows OS you will need to install a [Linux subsystem](https://learn.microsoft.com/en-us/windows/wsl/about) or use such systems as 
+The following assumes a UNIX operating systems. If running Windows OS you will need to install a [Linux subsystem](https://learn.microsoft.com/en-us/windows/wsl/about) or use such emulators such as Anaconda prompt. I **strongly** advise installing using `conda`.
 
 First, *clone* the repository into a local directory:
 

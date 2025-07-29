@@ -32,7 +32,7 @@ check_d8("data/d8_bad_bounds.tif")
 set_d8_boundaries_to_zero("data/d8_bad_bounds.tif")
 
 # Now we can check the corrected raster.
-check_d8("data/d8_bad_bounds_fix_bounds.tif")
+check_d8("d8_bad_bounds_fix_bounds.tif")
 
 ### Snapping misaligned sample sites to the nearest drainage network ###
 # In general, sample sites are not perfectly aligned with the drainage network, due to
@@ -44,7 +44,7 @@ check_d8("data/d8_bad_bounds_fix_bounds.tif")
 
 # First, let's generate some noisy sample sites.
 # Load in real samples
-samples = pd.read_csv("data/sample_data.dat", sep=" ")
+samples = pd.read_csv("data/sample_data.csv")
 sample_x, sample_y = samples["x_coordinate"], samples["y_coordinate"]
 # Jitter the locations by up to 1000m
 # Set the seed
@@ -53,21 +53,22 @@ max_noise = 1000
 sample_x_noise = sample_x + np.random.uniform(-max_noise, max_noise, len(sample_x))
 sample_y_noise = sample_y + np.random.uniform(-max_noise, max_noise, len(sample_x))
 
-# Replaced the original coordinates with the noisy ones and save the file to "data/noisy_sample_data.dat"
+# Replaced the original coordinates with the noisy ones and save the file to "data/noisy_sample_data.csv"
 samples["x_coordinate"] = sample_x_noise
 samples["y_coordinate"] = sample_y_noise
-samples.to_csv("data/noisy_sample_data.dat", sep=" ", index=False)
-noisy_samples = pd.read_csv("data/noisy_sample_data.dat", sep=" ")
+samples.to_csv("data/noisy_sample_data.csv", index=False)
+noisy_samples = pd.read_csv("data/noisy_sample_data.csv")
 
 # When we build the sample network using the noisy samples, we can see that the network is not connected properly.
 
 # Load sample network
 sample_network, labels = get_sample_graph(
     flowdirs_filename="data/d8.asc",
-    sample_data_filename="data/noisy_sample_data.dat",
+    sample_data_filename="data/noisy_sample_data.csv",
 )
 
 plt.figure(figsize=(15, 10))  # Visualise network
+plt.title("Disconnected Network Due to Misaligned Samples")
 plot_network(sample_network)
 plt.show()
 
@@ -83,7 +84,7 @@ plt.show()
 
 snap_to_drainage(
     flow_dirs_filename="data/d8.asc",
-    sample_sites_filename="data/noisy_sample_data.dat",
+    sample_sites_filename="data/noisy_sample_data.csv",
     drainage_area_threshold=40000000,  # 40 km^2
     plot=True,
     save=True,
@@ -94,10 +95,11 @@ snap_to_drainage(
 # Load sample network
 sample_network, labels = get_sample_graph(
     flowdirs_filename="data/d8.asc",
-    sample_data_filename="data/noisy_sample_data_snapped.dat",
+    sample_data_filename="noisy_sample_data_snapped.csv",
 )
 
 plt.figure(figsize=(15, 10))  # Visualise network
+plt.title("Correctly Connected Network with Snapped Samples")
 plot_network(sample_network)
 plt.show()
 

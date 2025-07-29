@@ -31,11 +31,11 @@ def main() -> None:
     # Load sample network
     sample_network, labels = funmixer.get_sample_graph(
         flowdirs_filename="data/d8.asc",
-        sample_data_filename="data/sample_data.dat",
+        sample_data_filename="data/sample_data.csv",
     )
 
     # Load in observations
-    obs_data = pd.read_csv("data/sample_data.dat", delimiter=" ")
+    obs_data = pd.read_csv("data/sample_data.csv")
     obs_data = obs_data.drop(columns=["Bi", "S"])
 
     plt.figure(figsize=(15, 10))  # Visualise network

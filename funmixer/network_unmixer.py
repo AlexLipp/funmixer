@@ -37,7 +37,6 @@ from .cvxpy_extensions import ReciprocalParameter, cp_log_ratio
 import funmixer.flow_acc_cfuncs as cf
 
 NO_DOWNSTREAM: Final[int] = 0
-SAMPLE_CODE_COL_NAME: Final[str] = "Sample.Code"
 ELEMENT_LIST: Final[List[str]] = ["H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne", "Na", "Mg", "Al", "Si", "P", "S", "Cl", "Ar", "K", "Ca", "Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn", "Ga", "Ge", "As", "Se", "Br", "Kr", "Rb", "Sr", "Y", "Zr", "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag", "Cd", "In", "Sn", "Sb", "Te", "I", "Xe", "Cs", "Ba", "La", "Ce", "Pr", "Nd", "Pm", "Sm", "Eu", "Gd", "Tb", "Dy", "Ho", "Er", "Tm", "Yb", "Lu", "Hf", "Ta", "W", "Re", "Os", "Ir", "Pt", "Au", "Hg", "Tl", "Pb", "Bi", "Po", "At", "Rn", "Fr", "Ra", "Ac", "Th", "Pa", "U", "Np", "Pu", "Am", "Cm", "Bk", "Cf", "Es", "Fm", "Md", "No", "Lr", "Rf", "Db", "Sg", "Bh", "Hs", "Mt", "Ds", "Rg", "Cn", "Uut", "Fl", "Uup", "Lv", "Uus", "Uuo"]  # fmt: skip
 
 ElementData = Dict[str, float]
@@ -678,7 +677,8 @@ class SampleNetworkUnmixer:
 
 def get_element_obs(element: str, obs_data: pd.DataFrame) -> ElementData:
     """
-    Extracts observed element data from a pandas DataFrame.
+    Extracts observed element data from a pandas DataFrame. Assumes the first column contains sample names
+    and the specified element column contains the observed concentrations.
 
     Args:
         element: The name of the element for which the data is to be extracted.
@@ -690,8 +690,7 @@ def get_element_obs(element: str, obs_data: pd.DataFrame) -> ElementData:
     """
     element_data: ElementData = {
         e: c
-        # pyre-fixme[29]: `Series` is not a function.
-        for e, c in zip(obs_data[SAMPLE_CODE_COL_NAME].tolist(), obs_data[element].tolist())
+        for e, c in zip(obs_data.iloc[:, 0].tolist(), obs_data[element].tolist())
         if isinstance(c, float)
     }
     return element_data
