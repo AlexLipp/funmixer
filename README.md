@@ -20,7 +20,7 @@ Some common data input problems can be solved by:
 
 ## Installation
 
-The following assumes a UNIX operating systems. If running Windows OS you will need to install a [Linux subsystem](https://learn.microsoft.com/en-us/windows/wsl/about) or use such emulators such as Anaconda prompt. I **strongly** advise installing using `conda`.
+The following assumes a UNIX operating using the `conda` package manager. `conda` is preferred as it (in general) allows for easier installation of the `gdal` dependency than, for instance, `pip`. Whilst this package was developed on a UNIX system, the following commands (or similar) should be possible on a Windows OS using an Anaconda prompt. 
 
 First, *clone* the repository into a local directory:
 
@@ -28,9 +28,19 @@ First, *clone* the repository into a local directory:
 git clone https://github.com/AlexLipp/funmixer/ [LOCAL_DIRECTORY]
 ```
 
-If using conda environments, a conda environment file (`requirements.yaml`) is provided containing the python dependencies. A conda environment entitled `funmixer` can be generated from it using `conda env create -f requirements.yaml`. The environment can then be activated using `conda activate funmixer`.
+A conda environment file (`requirements.yaml`) is provided containing the python dependencies. A conda environment entitled `funmixer` can be generated from it by running:
 
-Next, install the python package using:
+```
+conda env create -f requirements.yaml
+```
+
+The environment can then be activated using
+
+```
+conda activate funmixer
+```
+
+Next, install the `funmixer` python package using:
 
 ```
 pip install -e .
