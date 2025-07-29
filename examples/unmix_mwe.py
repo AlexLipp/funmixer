@@ -29,7 +29,7 @@ def main() -> None:
     element = "Mg"  # Set element
 
     # Load sample network
-    sample_network, _ = funmixer.get_sample_graphs(
+    sample_network, labels = funmixer.get_sample_graph(
         flowdirs_filename="data/d8.asc",
         sample_data_filename="data/sample_data.dat",
     )
@@ -55,9 +55,11 @@ def main() -> None:
     )
 
     print("Solving problem...")
-    solution = problem.solve(element_data, solver="ecos", regularization_strength=10 ** (-3))
+    solution = problem.solve(element_data, solver="clarabel", regularization_strength=10 ** (-3))
 
-    area_dict = funmixer.get_unique_upstream_areas(sample_network)  # Extract areas for each basin
+    area_dict = funmixer.get_unique_upstream_areas(
+        sample_network, labels
+    )  # Extract areas for each basin
     upstream_map = funmixer.get_upstream_concentration_map(
         area_dict,
         solution.upstream_preds,

@@ -10,7 +10,7 @@ def main() -> None:
     rel_err = 5  # 5% relative error
 
     # Load in Drainage Network
-    sample_network, _ = funmixer.get_sample_graphs(
+    sample_network, labels = funmixer.get_sample_graph(
         flowdirs_filename="data/synthetic_topo_d8.asc",
         sample_data_filename="data/synthetic_samples.dat",
     )  # Get upstream basins
@@ -19,7 +19,7 @@ def main() -> None:
     # plt.title("Sample Network")
     # funmixer.plot_network(sample_network)
 
-    areas = funmixer.get_unique_upstream_areas(sample_network)
+    areas = funmixer.get_unique_upstream_areas(sample_network, labels)
 
     # Pick random values to set each basin
     np.random.seed(0)

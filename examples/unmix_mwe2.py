@@ -13,7 +13,7 @@ def main() -> None:
     data_filename = "data/sample_data.dat"
     excluded_elements = ["Bi", "S"]
 
-    sample_network, _ = funmixer.get_sample_graphs(flowdirs_filename, data_filename)
+    sample_network, labels = funmixer.get_sample_graph(flowdirs_filename, data_filename)
 
     funmixer.plot_network(sample_network)
     obs_data = pd.read_csv(data_filename, delimiter=" ")
@@ -21,7 +21,7 @@ def main() -> None:
 
     problem = funmixer.SampleNetworkUnmixer(sample_network=sample_network)
 
-    funmixer.get_unique_upstream_areas(problem.sample_network)
+    funmixer.get_unique_upstream_areas(problem.sample_network, labels)
 
     if len(funmixer.ELEMENT_LIST) == 0:
         raise Exception("No elements to process!")

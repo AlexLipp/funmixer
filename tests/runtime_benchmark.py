@@ -2,7 +2,7 @@ import sys
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import DefaultDict, List, Optional, Tuple, TypeVar
+from typing import DefaultDict, List, Optional, TypeVar
 
 # pyre-fixme[21]: Could not find module `matplotlib.pyplot`.
 import matplotlib.pyplot as plt
