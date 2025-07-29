@@ -8,7 +8,7 @@ This script demonstrates the preprocessing capabilities of funmixer. Specificall
 
 from funmixer import (
     check_d8,
-    get_sample_graphs,
+    get_sample_graph,
     plot_network,
     set_d8_boundaries_to_zero,
     snap_to_drainage,
@@ -62,7 +62,7 @@ noisy_samples = pd.read_csv("data/noisy_sample_data.dat", sep=" ")
 # When we build the sample network using the noisy samples, we can see that the network is not connected properly.
 
 # Load sample network
-sample_network, _ = get_sample_graphs(
+sample_network, labels = get_sample_graph(
     flowdirs_filename="data/d8.asc",
     sample_data_filename="data/noisy_sample_data.dat",
 )
@@ -92,7 +92,7 @@ snap_to_drainage(
 
 # Once this is done, we can load in the snapped sample sites and build the sample network again.
 # Load sample network
-sample_network, _ = get_sample_graphs(
+sample_network, labels = get_sample_graph(
     flowdirs_filename="data/d8.asc",
     sample_data_filename="data/noisy_sample_data_snapped.dat",
 )
