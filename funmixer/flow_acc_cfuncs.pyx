@@ -1,18 +1,84 @@
 """
 This module contains functions for building a topological stack of nodes in a flow direction array.
-For speed and memory efficiency, the functions are written in Cython. The algorithm for building a 
-sample network of subbasins was created by Richard Barnes in C++ and translated to Cython by Alex Lipp.
+For speed and memory efficiency, the functions are written in Cython. Sample graph construction algorithm
+initially developed by Rich Barnes in C++ and translated to Cython by Alex Lipp.
 """
 # distutils: language = c++
 from libcpp.stack cimport stack
 from libcpp.queue cimport queue
 from libcpp.vector cimport vector
-from libcpp.unordered_set cimport unordered_set
-from libcpp.unordered_map cimport unordered_map
 
 import numpy as np
 cimport numpy as cnp
 cimport cython
+
+ROOT_NODE_NAME = "##ROOT##"
+UNSET_NODE_NAME = "##UNSET##"
+NO_DOWNSTREAM_NEIGHBOUR = 2**32 - 1  # Maximum value for a 64-bit integer, used to indicate no downstream neighbour
+
+cdef class SampleData:
+    """
+    A class to hold sample site data (name and coordinates) for a node in the sample graph.
+    """
+    cdef public str name
+    cdef public cnp.float64_t x
+    cdef public cnp.float64_t y
+
+    def __cinit__(self):
+        self.name = UNSET_NODE_NAME
+        self.x = -1.
+        self.y = -1.
+
+    # Define a factory method to create a SampleData instance from a dictionary
+    @staticmethod
+    def from_dict(data):
+        cdef SampleData sample = SampleData()
+        sample.name = data.get("name", UNSET_NODE_NAME)
+        sample.x = data.get("x", -1.)
+        sample.y = data.get("y", -1.)
+        return sample
+
+cdef class NativeSampleNode:
+    """
+    A class to hold a node in the sample graph. This will be converted into a Python object later.
+    """
+    cdef public SampleData data
+    cdef public cnp.int64_t downstream_node
+    cdef public list[str] upstream_nodes
+    cdef public cnp.int64_t area
+    cdef public cnp.int64_t total_upstream_area
+    cdef public cnp.int64_t label
+
+    def __cinit__(self):
+        self.data = SampleData()
+        self.downstream_node = NO_DOWNSTREAM_NEIGHBOUR
+        self.upstream_nodes = []
+        self.area = 0
+        self.total_upstream_area = 0
+        self.label = -1  # Default label, will be set later
+
+    @staticmethod
+    def make_root_node():
+        """
+        Factory method to create a root node with a default label and name.
+        """
+        cdef NativeSampleNode temp
+        temp = NativeSampleNode()
+        temp.label = 0  # Root node label
+        temp.data.name = ROOT_NODE_NAME
+        return temp
+
+    @staticmethod
+    def make_w_downstream_and_sample(cnp.int64_t downstream_node, SampleData sample_data):
+        """
+        Factory method to create a node with a downstream neighbour and sample data.
+        """
+        cdef NativeSampleNode temp = NativeSampleNode()
+        temp.downstream_node = downstream_node
+        temp.data = sample_data
+        return temp
+
+### The following functions are related to the D8 flow direction array and its processing ###
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
@@ -205,62 +271,7 @@ def accumulate_flow(
 
     return accum
 
-#### All the code below is adapted from the C++ code by Richard Barnes ####
-
-ROOT_NODE_NAME = "##ROOT##"
-UNSET_NODE_NAME = "##UNSET##"
-NO_DOWNSTREAM_NEIGHBOUR = 2**32 - 1  # Maximum value for a 64-bit integer, used to indicate no downstream neighbour
-
-cdef class SampleData:
-    cdef public str name
-    cdef public cnp.float64_t x
-    cdef public cnp.float64_t y
-
-    def __cinit__(self):
-        self.name = UNSET_NODE_NAME
-        self.x = -1.
-        self.y = -1.
-
-    # Define a factory method to create a SampleData instance from a dictionary
-    @staticmethod
-    def from_dict(data):
-        cdef SampleData sample = SampleData()
-        sample.name = data.get("name", UNSET_NODE_NAME)
-        sample.x = data.get("x", -1.)
-        sample.y = data.get("y", -1.)
-        return sample
-
-# Define the NativeSampleNode class
-cdef class NativeSampleNode:
-    cdef public SampleData data
-    cdef public cnp.int64_t downstream_node
-    cdef public list[str] upstream_nodes
-    cdef public cnp.int64_t area
-    cdef public cnp.int64_t total_upstream_area
-    cdef public cnp.int64_t label
-
-    def __cinit__(self):
-        self.data = SampleData()
-        self.downstream_node = NO_DOWNSTREAM_NEIGHBOUR
-        self.upstream_nodes = []
-        self.area = 0
-        self.total_upstream_area = 0
-        self.label = -1  # Default label, will be set later
-
-    @staticmethod
-    def make_root_node():
-        cdef NativeSampleNode temp
-        temp = NativeSampleNode()
-        temp.label = 0  # Root node label
-        temp.data.name = ROOT_NODE_NAME
-        return temp
-
-    @staticmethod
-    def make_w_downstream_and_sample(cnp.int64_t downstream_node, SampleData sample_data):
-        cdef NativeSampleNode temp = NativeSampleNode()
-        temp.downstream_node = downstream_node
-        temp.data = sample_data
-        return temp
+### The following algorithms are related to the sample graph and its upstream areas ###
 
 @cython.boundscheck(False)  # Deactivate bounds checking
 @cython.wraparound(False)   # Deactivate negative indexing.

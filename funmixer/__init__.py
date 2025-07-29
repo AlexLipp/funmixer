@@ -1,4 +1,4 @@
-from .d8processing import check_d8, set_d8_boundaries_to_zero, snap_to_drainage
+from .d8processing import *
 
 from .network_unmixer import (
     ELEMENT_LIST,
@@ -7,7 +7,7 @@ from .network_unmixer import (
     SampleNode,
     forward_model,
     get_element_obs,
-    get_sample_graphs,
+    # get_sample_graphs,
     get_unique_upstream_areas,
     get_upstream_concentration_map,
     mix_downstream,
@@ -22,7 +22,6 @@ __all__ = [
     "ElementData",
     "ELEMENT_LIST",
     "get_element_obs",
-    "get_sample_graphs",
     "get_unique_upstream_areas",
     "get_upstream_concentration_map",
     "forward_model",
