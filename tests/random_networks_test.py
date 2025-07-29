@@ -173,7 +173,7 @@ def generate_r_ary_sample_network(
 #     upstream = conc_list_to_dict(network, concentrations)
 #     downstream = funmixer.forward_model(sample_network=network, upstream_concentrations=upstream)
 #     problem = funmixer.SampleNetworkUnmixer(sample_network=network, use_regularization=False)
-#     solution = problem.solve(downstream, solver="ecos")
+#     solution = problem.solve(downstream)
 
 #     # Check that the recovered upstream concentrations are within 0.1% of the true upstream concentrations using
 #     # the np.isclose function
@@ -218,7 +218,7 @@ def test_balanced_network(
     upstream = conc_list_to_dict(network, concentrations)
     downstream = funmixer.forward_model(sample_network=network, upstream_concentrations=upstream)
     problem = funmixer.SampleNetworkUnmixer(sample_network=network, use_regularization=False)
-    solution = problem.solve(downstream, solver="ecos")
+    solution = problem.solve(downstream)
 
     # Check that the recovered upstream concentrations are within 0.1% of the true upstream concentrations using
     # the np.isclose function
@@ -261,7 +261,7 @@ def test_rary_network(
     upstream = conc_list_to_dict(network, concentrations)
     downstream = funmixer.forward_model(sample_network=network, upstream_concentrations=upstream)
     problem = funmixer.SampleNetworkUnmixer(sample_network=network, use_regularization=False)
-    solution = problem.solve(downstream, solver="ecos")
+    solution = problem.solve(downstream)
 
     # Check that the recovered upstream concentrations are within 0.1% of the true upstream concentrations using
     # the np.isclose function

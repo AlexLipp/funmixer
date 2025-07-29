@@ -164,7 +164,10 @@ def do_benchmark() -> None:
     start = time.time()
 
     print("Testing ECOS solver...")
-    ecos_bench = run_benchmark("ecos", network_sizes)
+    try:
+        ecos_bench: BenchmarkResults = run_benchmark("ecos", network_sizes)
+    except Exception as err:
+        print(f"Could not benchmark ECOS. Error: {err}")
 
     print("Testing GUROBI solver...")
     gurobi_bench: Optional[BenchmarkResults] = None
