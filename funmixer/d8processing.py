@@ -183,6 +183,10 @@ def snap_to_drainage(
         snapped[i] = nearest
     # Plot the network and the noisy, nudged and snapped samples
     if plot:
+
+        CHANNEL_PIXEL_SCALER = 5  # Size of channel pixels in the plot
+        CHANNEL_PIXEL_MIN_SIZE = 0.05  # Ensures smallest area is not too small to see
+
         print("Plotting results...")
         plt.figure(figsize=(15, 10))
         plt.imshow(accum.arr, cmap="Greys_r", alpha=0.2, extent=accum.extent, zorder=0)
@@ -192,7 +196,11 @@ def snap_to_drainage(
         loga = np.log10(chan_area)
         min_area = np.min(loga)
         max_area = np.max(loga)
-        chan_pix_size = 5 * (loga - 0.99 * min_area) / (max_area - min_area)
+        chan_pix_size = (
+            CHANNEL_PIXEL_SCALER
+            * (loga - min_area + CHANNEL_PIXEL_MIN_SIZE)
+            / (max_area - min_area)
+        )
         plt.scatter(
             chan_coords[:, 0],
             chan_coords[:, 1],
