@@ -21,7 +21,6 @@ from typing import (
 
 # TODO(rbarnes): Make a requirements file for conda
 import cvxpy as cp
-import imageio
 
 # pyre-fixme[21]: Could not find module `matplotlib.image`.
 import matplotlib.image as mpimg
@@ -34,12 +33,10 @@ import numpy.typing as npt
 import pandas as pd
 import tqdm
 
-import _funmixer_native as fn
-
 from .cvxpy_extensions import ReciprocalParameter, cp_log_ratio
+import funmixer.flow_acc_cfuncs as cf
 
 NO_DOWNSTREAM: Final[int] = 0
-SAMPLE_CODE_COL_NAME: Final[str] = "Sample.Code"
 ELEMENT_LIST: Final[List[str]] = ["H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne", "Na", "Mg", "Al", "Si", "P", "S", "Cl", "Ar", "K", "Ca", "Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn", "Ga", "Ge", "As", "Se", "Br", "Kr", "Rb", "Sr", "Y", "Zr", "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag", "Cd", "In", "Sn", "Sb", "Te", "I", "Xe", "Cs", "Ba", "La", "Ce", "Pr", "Nd", "Pm", "Sm", "Eu", "Gd", "Tb", "Dy", "Ho", "Er", "Tm", "Yb", "Lu", "Hf", "Ta", "W", "Re", "Os", "Ir", "Pt", "Au", "Hg", "Tl", "Pb", "Bi", "Po", "At", "Rn", "Fr", "Ra", "Ac", "Th", "Pa", "U", "Np", "Pu", "Am", "Cm", "Bk", "Cf", "Es", "Fm", "Md", "No", "Lr", "Rf", "Db", "Sg", "Bh", "Hs", "Mt", "Ds", "Rg", "Cn", "Uut", "Fl", "Uup", "Lv", "Uus", "Uuo"]  # fmt: skip
 
 ElementData = Dict[str, float]
@@ -78,11 +75,11 @@ class SampleNode:
     my_export_rate: cp.Parameter = field(default_factory=lambda: cp.Parameter(pos=True))
 
     @classmethod
-    def from_native(cls, n: fn.NativeSampleNode) -> "SampleNode":
+    def from_native(cls, n: cf.NativeSampleNode) -> "SampleNode":
         return cls(
-            name=n.name,
-            x=n.x,
-            y=n.y,
+            name=n.data.name,
+            x=n.data.x,
+            y=n.data.y,
             downstream_node=n.downstream_node,
             upstream_nodes=n.upstream_nodes,
             area=n.area,
@@ -107,18 +104,8 @@ def nx_values(sample_network: nx.DiGraph) -> Iterator[SampleNode]:
         yield data["data"]
 
 
-def native_sample_graph_to_python(g: Dict[str, fn.NativeSampleNode]) -> Dict[str, SampleNode]:
-    """
-    Convert a graph of native SampleNodes to a graph of Python SampleNodes.
-    """
-    newg: Dict[str, SampleNode] = {}
-    for k, v in g.items():
-        newg[k] = SampleNode.from_native(v)
-    return newg
-
-
 # Solvers that can handle this problem type include:
-# ECOS, SCS
+# ECOS, SCS, ClARABEL, GUROBI, SCIP
 # See: https://www.cvxpy.org/tutorial/advanced/index.html#choosing-a-solver
 # See: https://www.cvxpy.org/tutorial/advanced/index.html#setting-solver-options
 SOLVERS: Dict[str, Any] = {
@@ -168,8 +155,6 @@ def geo_mean(x: List[float]) -> float:
     Returns:
         The geometric mean of the numbers in the list.
     """
-    # pyre-fixme[6]: For 1st argument expected `Union[bytes, complex, float, int,
-    #  generic, str]` but got `List[float]`.
     return np.exp(np.log(x).mean())
 
 
@@ -249,41 +234,6 @@ def plot_network(G: nx.DiGraph) -> None:
     plt.imshow(img)
     plt.show()
     os.remove(tempname)
-
-
-def get_sample_graphs(
-    flowdirs_filename: str,
-    sample_data_filename: str,
-) -> Tuple[nx.DiGraph, "fn.SampleAdjacency"]:
-    """
-    Get sample network graph and adjacency matrix from flow direction and concentration dataset files.
-
-    Args:
-        flowdirs_filename: File name of the flow directions D8 raster.
-        sample_data_filename: File name of the geochemical sample data (concentrations).
-
-    Returns:
-        A tuple containing two objects:
-        - sample_network: A networkx DiGraph representing the sample network.
-        - sample_adjacency: An instance of fn.SampleAdjacency. This contains the length of shared catchment
-         between each node's subbasin.
-
-    """
-    sample_network_native_raw, sample_adjacency = fn.fastunmix(
-        flowdirs_filename, sample_data_filename
-    )
-    sample_network_raw = native_sample_graph_to_python(sample_network_native_raw)
-
-    # Convert it into a networkx graph for easy use in Python
-    sample_network = nx.DiGraph()
-    for x in sample_network_raw.values():  # Skip the first node into which it all flows
-        if x.name == fn.root_node_name:
-            continue
-        sample_network.add_node(x.name, data=x)
-        if x.downstream_node != fn.root_node_name:
-            sample_network.add_edge(x.name, x.downstream_node)
-
-    return sample_network, sample_adjacency
 
 
 class SampleNetworkUnmixer:
@@ -518,7 +468,7 @@ class SampleNetworkUnmixer:
         observation_data: ElementData,
         export_rates: Optional[ExportRateData] = None,
         regularization_strength: Optional[float] = None,
-        solver: str = "ecos",
+        solver: str = "clarabel",
     ) -> FunmixerSolution:
         """
         Solves the optimization problem.
@@ -531,7 +481,7 @@ class SampleNetworkUnmixer:
             observation_data: The observed data for each element.
             export_rates: The export rates for each element. If not provided these are all set to 1.
             regularization_strength: The strength of the regularization term
-            solver: The solver to use for solving the optimization problem (default is ecos)
+            solver: The solver to use for solving the optimization problem (default is clarabel)
 
         Returns:
             A tuple containing the downstream and upstream predictions. The downstream and upstream predictions
@@ -603,7 +553,7 @@ class SampleNetworkUnmixer:
         num_repeats: int,
         export_rates: Optional[ExportRateData] = None,
         regularization_strength: Optional[float] = None,
-        solver: str = "gurobi",
+        solver: str = "clarabel",
     ) -> Tuple[DefaultDict[str, List[float]], Dict[str, List[float]]]:
         """
         Solves the optimization problem using Monte Carlo simulation.
@@ -618,7 +568,7 @@ class SampleNetworkUnmixer:
             num_repeats: The number of times to repeat the Monte Carlo simulation.
             export_rates: The export rates for each element. If not provided these are all set to 1.
             regularization_strength: The strength of the regularization term (default: None).
-            solver: The solver to use for solving the optimization problem (default: "gurobi").
+            solver: The solver to use for solving the optimization problem (default: "clarabel").
 
         Returns:
                 A tuple containing the Monte Carlo simulation results.
@@ -727,7 +677,8 @@ class SampleNetworkUnmixer:
 
 def get_element_obs(element: str, obs_data: pd.DataFrame) -> ElementData:
     """
-    Extracts observed element data from a pandas DataFrame.
+    Extracts observed element data from a pandas DataFrame. Assumes the first column contains sample names
+    and the specified element column contains the observed concentrations.
 
     Args:
         element: The name of the element for which the data is to be extracted.
@@ -739,8 +690,7 @@ def get_element_obs(element: str, obs_data: pd.DataFrame) -> ElementData:
     """
     element_data: ElementData = {
         e: c
-        # pyre-fixme[29]: `Series` is not a function.
-        for e, c in zip(obs_data[SAMPLE_CODE_COL_NAME].tolist(), obs_data[element].tolist())
+        for e, c in zip(obs_data.iloc[:, 0].tolist(), obs_data[element].tolist())
         if isinstance(c, float)
     }
     return element_data
@@ -798,8 +748,8 @@ def forward_model(
 
 def mix_downstream(
     sample_network: nx.DiGraph,
-    areas: Dict[str, npt.NDArray[np.float_]],
-    concentration_map: npt.NDArray[np.float_],
+    areas: Dict[str, npt.NDArray[np.float64]],
+    concentration_map: npt.NDArray[np.float64],
     export_rates: Optional[ExportRateData] = None,
 ) -> Tuple[ElementData, ElementData]:
     """Mixes a given concentration map along drainage, predicting the downstream concentration at sample sites
@@ -824,6 +774,7 @@ def mix_downstream(
 
 def get_unique_upstream_areas(
     sample_network: nx.DiGraph,
+    labels: npt.NDArray[np.int_],
 ) -> Dict[str, npt.NDArray[np.bool_]]:
     """
     Generates a dictionary mapping sample numbers to unique upstream areas as boolean masks.
@@ -834,22 +785,8 @@ def get_unique_upstream_areas(
     Returns:
         A dictionary where the keys are sample numbers and the values are boolean masks
         representing the unique upstream areas for each sample site.
-
-    Note:
-        The function generates a dictionary that maps each sample number in the sample network onto a boolean mask
-        representing the unique upstream area associated with that sample site. The boolean mask is obtained from an
-        image file, assuming the presence of a file named "labels.tif" (generated after calling `get_sample_graphs).
-        The pixel values in the image correspond to the labels of the unique upstream areas.
-
-        The function reads the image file using `plt.imread()` and extracts the first channel (`[:, :, 0]`) as the
-        labels. It then creates a boolean mask for each sample site by comparing the labels to the label of the sample
-        site in the sample network data.
-
-        The resulting dictionary provides a mapping between each sample number and its unique upstream area as a boolean
-        mask.
     """
-    I = imageio.v2.imread("labels.tif")
-    return {node: I == data.label for node, data in nx_items(sample_network)}
+    return {node: labels == data.label for node, data in nx_items(sample_network)}
 
 
 def plot_sweep_of_regularizer_strength(
@@ -874,7 +811,7 @@ def plot_sweep_of_regularizer_strength(
     Note:
         The function performs a sweep of regularization strengths within a specified logspace range and plots their
         impact on the roughness and data misfit of the sample network. For each regularization strength value, it
-        solves the sample network problem using the specified solver ("ecos") and the corresponding regularization
+        solves the sample network problem using the default solver and the corresponding regularization
         strength. It then calculates the roughness and data misfit values using the network's `get_roughness()` and
         `get_misfit()` methods, respectively.
 
@@ -890,7 +827,6 @@ def plot_sweep_of_regularizer_strength(
     for val in tqdm.tqdm(vals, total=len(vals)):
         _ = sample_network.solve(
             element_data,
-            solver="ecos",
             regularization_strength=val,
             export_rates=export_rates,
         )
@@ -906,7 +842,7 @@ def plot_sweep_of_regularizer_strength(
 def get_upstream_concentration_map(
     areas: Dict[str, npt.NDArray[np.bool_]],
     upstream_preds: Dict[str, float],
-) -> npt.NDArray[np.float_]:
+) -> npt.NDArray[np.float64]:
     """
     Generate a two-dimensional map displaying the predicted upstream concentration for a given element for each unique upstream area.
 

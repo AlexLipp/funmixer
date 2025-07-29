@@ -10,18 +10,18 @@ logger.addHandler(logging.StreamHandler())
 
 def main() -> None:
     flowdirs_filename = "data/d8.asc"
-    data_filename = "data/sample_data.dat"
+    data_filename = "data/sample_data.csv"
     excluded_elements = ["Bi", "S"]
 
-    sample_network, _ = funmixer.get_sample_graphs(flowdirs_filename, data_filename)
+    sample_network, labels = funmixer.get_sample_graph(flowdirs_filename, data_filename)
 
     funmixer.plot_network(sample_network)
-    obs_data = pd.read_csv(data_filename, delimiter=" ")
+    obs_data = pd.read_csv(data_filename)
     obs_data = obs_data.drop(columns=excluded_elements)
 
     problem = funmixer.SampleNetworkUnmixer(sample_network=sample_network)
 
-    funmixer.get_unique_upstream_areas(problem.sample_network)
+    funmixer.get_unique_upstream_areas(problem.sample_network, labels)
 
     if len(funmixer.ELEMENT_LIST) == 0:
         raise Exception("No elements to process!")
@@ -36,7 +36,7 @@ def main() -> None:
 
         element_data = funmixer.get_element_obs(element=element, obs_data=obs_data)
         try:
-            solution = problem.solve(element_data, solver="ecos", regularization_strength=1e-3)
+            solution = problem.solve(element_data, solver="clarabel", regularization_strength=1e-3)
         except cp.error.SolverError as err:
             logger.error(f"\033[91mSolver Error - skipping this element!\n{err}")
             continue

@@ -24,13 +24,13 @@ def main() -> None:
     element = "Mg"  # Set element
 
     # Load sample network
-    sample_network, _ = funmixer.get_sample_graphs(
+    sample_network, labels = funmixer.get_sample_graph(
         flowdirs_filename="data/d8.asc",
-        sample_data_filename="data/sample_data.dat",
+        sample_data_filename="data/sample_data.csv",
     )
 
     # Load in observations
-    obs_data = pd.read_csv("data/sample_data.dat", delimiter=" ")
+    obs_data = pd.read_csv("data/sample_data.csv")
     obs_data = obs_data.drop(columns=["Bi", "S"])
 
     plt.figure(figsize=(15, 10))  # Visualise network
@@ -56,7 +56,6 @@ def main() -> None:
         relative_error=relative_error,
         num_repeats=50,
         regularization_strength=regularizer_strength,
-        solver="ecos",
     )
 
     downstream_means, downstream_uncertainties = {}, {}
@@ -69,7 +68,9 @@ def main() -> None:
         upstream_uncertainties[sample] = np.std(np.array(values))
         upstream_means[sample] = np.mean(np.array(values))
 
-    area_dict = funmixer.get_unique_upstream_areas(sample_network)  # Extract areas for each basin
+    area_dict = funmixer.get_unique_upstream_areas(
+        sample_network, labels
+    )  # Extract areas for each basin
     upstream_map = funmixer.get_upstream_concentration_map(
         area_dict, upstream_means
     )  # Assign to upstream preds

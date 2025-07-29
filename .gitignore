@@ -13,3 +13,5 @@ cyth_scripts.c
 *.egg-info
 .pyre/
 .hypothesis/
+flow_acc_cfuncs.c
+flow_acc_cfuncs.cpp

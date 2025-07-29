@@ -5,11 +5,13 @@ This module contains functions for (pre)processing D8 flow direction grids and s
 from osgeo import gdal
 from pathlib import Path
 import matplotlib.pyplot as plt
+import networkx as nx
 import numpy as np
 import pandas as pd
 from typing import Tuple, List, Dict
 
 import funmixer.flow_acc_cfuncs as cf
+from funmixer.network_unmixer import SampleNode
 
 D8_VALUES = {0, 1, 2, 4, 8, 16, 32, 64, 128}
 
@@ -125,15 +127,11 @@ def snap_to_drainage(
         nudges (Dict[str, np.ndarray]): Dictionary of "nudges" for each sample site. The keys are the sample codes and the values are 2D vectors of dx and dy.
     """
     # Load in real samples
-    noisy_samples = pd.read_csv(sample_sites_filename, sep=" ")
-    # Check that noisy samples has the correct columns
-    if (
-        "x_coordinate" not in noisy_samples.columns
-        or "y_coordinate" not in noisy_samples.columns
-        or "Sample.Code" not in noisy_samples.columns
-    ):
+    noisy_samples = pd.read_csv(sample_sites_filename)
+    # Check that noisy samples has at least three columns. First one should be sample code and second and third must be numeric coordinates
+    if noisy_samples.shape[1] < 3:
         raise ValueError(
-            "Noisy samples must have 'x_coordinate', 'y_coordinate' and 'Sample.Code' columns."
+            "Sample sites file must have at least three columns: sample code, x coordinate, y coordinate."
         )
 
     print("Building D8 accumulator...")
@@ -154,7 +152,7 @@ def snap_to_drainage(
     chan_coords = np.column_stack((chan_x, chan_y))
 
     # Initiate an empty dictionary of "nudges", where each sample site is a key pointing to 2D vector of 0s
-    all_nudges = {code: np.zeros(2) for code in noisy_samples["Sample.Code"]}
+    all_nudges = {code: np.zeros(2) for code in noisy_samples.iloc[:, 0].values}
     # Update the nudges dictionary with the nudges argument
     print("Applying nudges...")
     for code, nudge in nudges.items():
@@ -165,15 +163,16 @@ def snap_to_drainage(
             raise ValueError(f"Nudge for sample code {code} must be a 2D vector.")
         all_nudges[code] = nudge
 
-    initial = np.column_stack((noisy_samples["x_coordinate"], noisy_samples["y_coordinate"]))
+    # Get x and y coordinates of the noisy samples from second and third columns
+    initial = np.column_stack((noisy_samples.iloc[:, 1], noisy_samples.iloc[:, 2]))
     # Nudge the sample according to the entry in "nudges"
-    nudged = initial + np.array([all_nudges[code] for code in noisy_samples["Sample.Code"]])
+    nudged = initial + np.array([all_nudges[code] for code in noisy_samples.iloc[:, 0].values])
     snapped = np.zeros((noisy_samples.shape[0], 2))
     # Loop through each sample site finding the nearest channel
     print("Looping through every sample snapping to drainage...")
     for i in range(noisy_samples.shape[0]):
-        code = noisy_samples["Sample.Code"][i]
-        sample = [noisy_samples["x_coordinate"][i], noisy_samples["y_coordinate"][i]]
+        code = noisy_samples.iloc[i, 0]
+        sample = [noisy_samples.iloc[i, 1], noisy_samples.iloc[i, 2]]
         # Nudge the sample according to the entry in "nudges"
         sample = sample + all_nudges[code]
         distances = np.sqrt(np.sum((chan_coords - sample) ** 2, axis=1))
@@ -189,8 +188,8 @@ def snap_to_drainage(
         # Add a grey line between the noisy and nudged samples
         for i in range(noisy_samples.shape[0]):
             plt.plot(
-                [noisy_samples["x_coordinate"][i], nudged[i, 0]],
-                [noisy_samples["y_coordinate"][i], nudged[i, 1]],
+                [noisy_samples.iloc[i, 1], nudged[i, 0]],
+                [noisy_samples.iloc[i, 2], nudged[i, 1]],
                 c="grey",
                 lw=1,
             )
@@ -198,8 +197,8 @@ def snap_to_drainage(
         plt.scatter(nudged[:, 0], nudged[:, 1], c="purple", label="Nudged Sample", marker="x")
         # Add the noisy samples to the plot
         plt.scatter(
-            noisy_samples["x_coordinate"],
-            noisy_samples["y_coordinate"],
+            noisy_samples.iloc[:, 1],
+            noisy_samples.iloc[:, 2],
             c="red",
             label="Original Sample",
             marker="x",
@@ -218,9 +217,9 @@ def snap_to_drainage(
         # Add the sample codes to the plot for each noisy sample
         for i in range(noisy_samples.shape[0]):
             plt.text(
-                noisy_samples["x_coordinate"][i],
-                noisy_samples["y_coordinate"][i],
-                noisy_samples["Sample.Code"][i],
+                noisy_samples.iloc[i, 1],
+                noisy_samples.iloc[i, 2],
+                noisy_samples.iloc[i, 0],
                 fontsize=8,
             )
         plt.axis("equal")
@@ -228,12 +227,12 @@ def snap_to_drainage(
 
     if save:
         # Replace the x and y coordinates of the noisy samples with the snapped ones
-        noisy_samples["x_coordinate"] = snapped[:, 0]
-        noisy_samples["y_coordinate"] = snapped[:, 1]
+        noisy_samples.iloc[:, 1] = snapped[:, 0]
+        noisy_samples.iloc[:, 2] = snapped[:, 1]
         # Save the snapped samples to a file with a suffix "snapped" before the file extension
         stem = Path(sample_sites_filename).stem
-        outfile = stem + "_snapped.dat"
-        noisy_samples.to_csv(outfile, sep=" ", index=False)
+        outfile = stem + "_snapped.csv"
+        noisy_samples.to_csv(outfile, index=False)
 
 
 class D8Accumulator:
@@ -277,6 +276,9 @@ class D8Accumulator:
     -------
     accumulate(weights : np.ndarray = None)
         Accumulate flow on the grid using the D8 flow directions
+
+    indices_to_coords(rows: np.ndarray, cols: np.ndarray)
+        Convert column and row indices to x and y coordinates for the centre point of a pixel.
     """
 
     def __init__(self, filename: str):
@@ -360,6 +362,40 @@ class D8Accumulator:
         miny = maxy + trsfm[5] * self.arr.shape[0]
         return [minx, maxx, miny, maxy]
 
+    def _check_valid_node(self, node: int) -> None:
+        """Checks if a node is valid"""
+        if node < 0 or node >= self.arr.size:
+            raise ValueError("Node is out of bounds")
+        if not isinstance(node, int) and not np.issubdtype(type(node), np.integer):
+            raise TypeError("Node must be an integer")
+
+    def node_to_coord(self, node: int) -> Tuple[float, float]:
+        """Converts a node index to a coordinate pair for the centre of the pixel"""
+        self._check_valid_node(node)
+        _, ncols = self.arr.shape
+        x_ind = node % ncols
+        y_ind = node // ncols
+        ulx, dx, _, uly, _, dy = self.ds.GetGeoTransform()
+        x_coord = ulx + dx * x_ind
+        y_coord = uly + dy * y_ind
+        # Add dx/2 and dy/2 to get to the center of the pixel from the upper left corner
+        x_coord += dx / 2
+        y_coord += dy / 2  # recall that dy is negative
+
+        return x_coord, y_coord
+
+    def coord_to_node(self, x: float, y: float) -> int:
+        """Converts a coordinate pair to a node index"""
+        nrows, ncols = self.arr.shape
+        ulx, dx, _, uly, _, dy = self.ds.GetGeoTransform()
+        # Casting to int rounds towards zero ('floor' for positive numbers; e.g, int(3.9) = 3)
+        x_ind = int((x - ulx) / dx)
+        y_ind = int((y - uly) / dy)
+        out = y_ind * ncols + x_ind
+        if out > ncols * nrows or out < 0:
+            raise ValueError("Coordinate is out of bounds")
+        return out
+
     def indices_to_coords(self, rows: np.ndarray, cols: np.ndarray) -> Tuple[np.ndarray]:
         """
         Convert column and row indices to x and y coordinates for the centre point of a pixel in the geospatial grid
@@ -376,3 +412,58 @@ class D8Accumulator:
         x = (trsfm[0] + cols * trsfm[1]) + trsfm[1] / 2
         y = (trsfm[3] + rows * trsfm[5]) + trsfm[5] / 2
         return x, y
+
+
+def get_sample_graph(
+    flowdirs_filename: str,
+    sample_data_filename: str,
+) -> Tuple[nx.DiGraph, np.ndarray]:
+    """
+    Function to build a directed graph of sample sites from a D8 flow direction grid and table of sample locations.
+
+    Args:
+        flowdirs_filename (str): The filename of the D8 flow direction grid.
+        sample_data_filename (str): The filename of the sample data file. First three columns should be: sample name, x coordinate, y coordinate.
+
+    Returns:
+        Tuple[nx.DiGraph, np.ndarray]: Tuple of 1) A directed graph of sample sites with SampleNode objects as nodes. 2) a
+        2D numpy array which maps each node onto a sub-basin via its label.
+    """
+    # Read the D8 flow direction grid and accumulate flow
+    acc = D8Accumulator(flowdirs_filename)
+    acc.accumulate()
+
+    # Read the sample data file and build a sample site graph
+    samples = pd.read_csv(sample_data_filename)
+
+    # Check that second and third columns are numeric
+    if not pd.api.types.is_numeric_dtype(samples.iloc[:, 1]) or not pd.api.types.is_numeric_dtype(
+        samples.iloc[:, 2]
+    ):
+        raise ValueError(
+            "Second and third columns of sample data must be numeric (x and y coordinates)."
+        )
+
+    # Extract the sample names, x and y coordinates from the first three columns of dat table
+    sample_dict = {}
+    for i in range(len(samples)):
+        name, x, y = samples.iloc[i, 0], samples.iloc[i, 1], samples.iloc[i, 2]
+        node = acc.coord_to_node(x, y)
+        sample_dict[node] = {"name": str(name), "x": x, "y": y}
+
+    # Build the sample site graph using the Cython functions for efficiency
+    print("Building sample site graph...")
+    labels, graph = cf.build_samplesite_graph(acc.receivers, acc.baselevel_nodes, sample_dict)
+
+    # Convert the native (Cython) sample nodes to Python SampleNode objects
+    sample_nodes = [SampleNode.from_native(node) for node in graph]
+    sample_network = nx.DiGraph()
+    for node in sample_nodes:
+        # Skip the root node into which it all flows
+        if node.name == cf.ROOT_NODE_NAME:
+            continue
+        sample_network.add_node(node.name, data=node)
+        if sample_nodes[node.downstream_node].name != cf.ROOT_NODE_NAME:
+            sample_network.add_edge(node.name, sample_nodes[node.downstream_node].name)
+
+    return sample_network, np.reshape(labels, acc.arr.shape)
