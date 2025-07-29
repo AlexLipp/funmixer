@@ -1,6 +1,6 @@
 # Funmixer - Unmixing nested observed concentrations in river networks for source regions
 
-This repository implements an efficient solution to the unmixing of nested concentrations in a (river) network using convex optimisation. The method is described in our [peer reviewed article in __Water Resources Research__](https://doi.org/10.1029/2023WR036159) 
+This repository implements an efficient solution to the unmixing of nested concentrations in a (river) network using convex optimisation. The method is described in our article in [_Water Resources Research_](https://doi.org/10.1029/2023WR036159) 
 
 ## Data input assumptions
 
