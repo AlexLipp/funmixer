@@ -148,6 +148,9 @@ def snap_to_drainage(
     print("Building channel locations...")
     # Get the x and y coordinates of the channels + combine into an array
     chan_rows, chan_cols = np.where(area > drainage_area_threshold)
+    flat_area = area.flatten()
+    # Area at each channel pixel
+    chan_area = flat_area[flat_area > drainage_area_threshold]
     chan_x, chan_y = accum.indices_to_coords(chan_rows, chan_cols)
     chan_coords = np.column_stack((chan_x, chan_y))
 
@@ -182,8 +185,21 @@ def snap_to_drainage(
     if plot:
         print("Plotting results...")
         plt.figure(figsize=(15, 10))
+        plt.imshow(accum.arr, cmap="Greys_r", alpha=0.2, extent=accum.extent, zorder=0)
         plt.title("Snapped Sample Sites")
-        plt.scatter(chan_coords[:, 0], chan_coords[:, 1], c="blue", label="Channel")
+
+        # Create sizes of channel pixels for prettier plotting
+        loga = np.log10(chan_area)
+        min_area = np.min(loga)
+        max_area = np.max(loga)
+        chan_pix_size = 5 * (loga - 0.99 * min_area) / (max_area - min_area)
+        plt.scatter(
+            chan_coords[:, 0],
+            chan_coords[:, 1],
+            s=chan_pix_size,
+            c="blue",
+            label="Channel Pixel",
+        )
 
         # Add a grey line between the noisy and nudged samples
         for i in range(noisy_samples.shape[0]):
