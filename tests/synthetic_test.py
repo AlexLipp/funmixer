@@ -49,7 +49,7 @@ def main() -> None:
     print("Building problem...")
     problem = funmixer.SampleNetworkUnmixer(sample_network, use_regularization=False)
     # Solve problem using synthetic downstream observations as input
-    solution = problem.solve(mixed_synth_down, solver="ecos", export_rates=input_export_rates)
+    solution = problem.solve(mixed_synth_down, export_rates=input_export_rates)
     # Generate recovered upstream concentration map
     print("Generating recovered upstream concentration map...")
     recovered_conc_map = funmixer.get_upstream_concentration_map(areas, solution.upstream_preds)
