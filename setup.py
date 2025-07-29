@@ -1,6 +1,3 @@
-import subprocess
-from typing import List
-
 import setuptools
 
 from Cython.Build import cythonize
@@ -8,23 +5,6 @@ from setuptools import Extension
 import numpy
 
 __version__ = "0.1.1"
-
-
-def get_gdal_config(option: str) -> str:
-    gdal_config_cmd = ["gdal-config", f"--{option}"]
-    result = subprocess.run(gdal_config_cmd, capture_output=True, text=True)
-    return result.stdout.strip()
-
-
-def get_arg(s: str, prefix: str) -> List[str]:
-    return [x.replace(prefix, "") for x in s.split() if x.startswith(prefix)]
-
-
-gdal_include_dir: List[str] = get_arg(get_gdal_config("cflags"), "-I")
-gdal_library_dir: List[str] = get_arg(get_gdal_config("libs"), "-L")
-gdal_deplibs_dir: List[str] = get_arg(get_gdal_config("dep-libs"), "-L")
-gdal_libs: List[str] = get_arg(get_gdal_config("libs"), "-l")
-gdal_deplibs: List[str] = get_arg(get_gdal_config("dep-libs"), "-l")
 
 ext_modules = cythonize(
     Extension(
@@ -46,7 +26,6 @@ setuptools.setup(
     ext_modules=ext_modules,
     keywords="GIS hydrology raster networks",
     python_requires=">= 3.8, <4",
-    # TODO: https://pypi.python.org/pypi?%3Aaction=list_classifiers
     classifiers=[
         "Development Status :: 4 - Beta",
         "Environment :: Console",

@@ -1,6 +1,3 @@
-# This CITATION.cff file was generated with cffinit.
-# Visit https://bit.ly/cffinit to generate yours today!
-
 cff-version: 1.0.0
 title: funmixer
 message: >-
@@ -14,16 +11,16 @@ authors:
     orcid: 'https://orcid.org/0000-0002-0204-6040'
   - given-names: Alexander
     family-names: Lipp
-    email: alexander.lipp@merton.ox.ac.uk
+    email: a.lipp@ucl.ac.uk
     orcid: 'https://orcid.org/0000-0003-2130-8576'
 identifiers:
   - type: url
-    value: 'https://github.com/r-barnes/faster-unmixer/'
+    value: 'https://github.com/AlexLipp/funmixer/'
     description: Code Repository
   - type: doi
-    value: 10.31223/X5708M
-    description: Preprint DOI
-repository-code: 'https://github.com/r-barnes/faster-unmixer/'
+    value: 10.1029/2023WR036159
+    description: Published manuscript DOI
+repository-code: 'https://github.com/AlexLipp/funmixer/'
 abstract: >-
   Rivers transport elements, minerals, chemicals, and
   pollutants produced in their upstream basins. A sample
