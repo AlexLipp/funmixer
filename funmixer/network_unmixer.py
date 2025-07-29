@@ -106,7 +106,7 @@ def nx_values(sample_network: nx.DiGraph) -> Iterator[SampleNode]:
 
 
 # Solvers that can handle this problem type include:
-# ECOS, SCS
+# ECOS, SCS, ClARABEL, GUROBI, SCIP
 # See: https://www.cvxpy.org/tutorial/advanced/index.html#choosing-a-solver
 # See: https://www.cvxpy.org/tutorial/advanced/index.html#setting-solver-options
 SOLVERS: Dict[str, Any] = {
@@ -469,7 +469,7 @@ class SampleNetworkUnmixer:
         observation_data: ElementData,
         export_rates: Optional[ExportRateData] = None,
         regularization_strength: Optional[float] = None,
-        solver: str = "ecos",
+        solver: str = "clarabel",
     ) -> FunmixerSolution:
         """
         Solves the optimization problem.
@@ -482,7 +482,7 @@ class SampleNetworkUnmixer:
             observation_data: The observed data for each element.
             export_rates: The export rates for each element. If not provided these are all set to 1.
             regularization_strength: The strength of the regularization term
-            solver: The solver to use for solving the optimization problem (default is ecos)
+            solver: The solver to use for solving the optimization problem (default is clarabel)
 
         Returns:
             A tuple containing the downstream and upstream predictions. The downstream and upstream predictions
@@ -554,7 +554,7 @@ class SampleNetworkUnmixer:
         num_repeats: int,
         export_rates: Optional[ExportRateData] = None,
         regularization_strength: Optional[float] = None,
-        solver: str = "gurobi",
+        solver: str = "clarabel",
     ) -> Tuple[DefaultDict[str, List[float]], Dict[str, List[float]]]:
         """
         Solves the optimization problem using Monte Carlo simulation.
@@ -569,7 +569,7 @@ class SampleNetworkUnmixer:
             num_repeats: The number of times to repeat the Monte Carlo simulation.
             export_rates: The export rates for each element. If not provided these are all set to 1.
             regularization_strength: The strength of the regularization term (default: None).
-            solver: The solver to use for solving the optimization problem (default: "gurobi").
+            solver: The solver to use for solving the optimization problem (default: "clarabel").
 
         Returns:
                 A tuple containing the Monte Carlo simulation results.
@@ -812,7 +812,7 @@ def plot_sweep_of_regularizer_strength(
     Note:
         The function performs a sweep of regularization strengths within a specified logspace range and plots their
         impact on the roughness and data misfit of the sample network. For each regularization strength value, it
-        solves the sample network problem using the specified solver ("ecos") and the corresponding regularization
+        solves the sample network problem using the default solver and the corresponding regularization
         strength. It then calculates the roughness and data misfit values using the network's `get_roughness()` and
         `get_misfit()` methods, respectively.
 
@@ -828,7 +828,6 @@ def plot_sweep_of_regularizer_strength(
     for val in tqdm.tqdm(vals, total=len(vals)):
         _ = sample_network.solve(
             element_data,
-            solver="ecos",
             regularization_strength=val,
             export_rates=export_rates,
         )

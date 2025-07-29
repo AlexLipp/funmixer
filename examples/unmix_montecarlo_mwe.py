@@ -56,7 +56,6 @@ def main() -> None:
         relative_error=relative_error,
         num_repeats=50,
         regularization_strength=regularizer_strength,
-        solver="ecos",
     )
 
     downstream_means, downstream_uncertainties = {}, {}

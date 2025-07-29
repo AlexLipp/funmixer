@@ -36,7 +36,7 @@ def main() -> None:
 
         element_data = funmixer.get_element_obs(element=element, obs_data=obs_data)
         try:
-            solution = problem.solve(element_data, solver="ecos", regularization_strength=1e-3)
+            solution = problem.solve(element_data, solver="clarabel", regularization_strength=1e-3)
         except cp.error.SolverError as err:
             logger.error(f"\033[91mSolver Error - skipping this element!\n{err}")
             continue
