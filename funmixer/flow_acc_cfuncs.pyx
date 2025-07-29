@@ -44,7 +44,7 @@ cdef class NativeSampleNode:
     """
     cdef public SampleData data
     cdef public cnp.int64_t downstream_node
-    cdef public list[str] upstream_nodes
+    cdef public list upstream_nodes
     cdef public cnp.int64_t area
     cdef public cnp.int64_t total_upstream_area
     cdef public cnp.int64_t label
