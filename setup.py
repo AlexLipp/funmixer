@@ -56,7 +56,6 @@ setuptools.setup(
         "networkx",
         "numpy",
         "pandas",
-        "pybind11",
         "pytest",
         "pygraphviz",
         "tqdm",
