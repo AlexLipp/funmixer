@@ -275,10 +275,11 @@ def accumulate_flow(
 
 @cython.boundscheck(False)  # Deactivate bounds checking
 @cython.wraparound(False)   # Deactivate negative indexing.
-def calculate_total_upstream_areas(list[NativeSampleNode] sample_graph):
+def calculate_total_upstream_areas(list sample_graph):
     """Calculates the total upstream areas for each sample node in the sample graph.
     Args:
         sample_graph: A list of NativeSampleNode objects representing the sample graph.
+        (Note: The list is expected to contain NativeSampleNode objects.)
     """
     cdef int n = len(sample_graph)
     # Count how many upstream neighbours we're waiting on
