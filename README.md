@@ -20,6 +20,10 @@ Some common data input problems can be solved by:
 
 ## Installation
 
+Funmixer has some python package dependencies so you will need to install these before you can run Funmixer. You can do this by either creating a [conda environment](https://docs.conda.io/projects/conda/en/latest/user-guide/tasks/manage-environments.html) or by creating an [apptainer container](https://apptainer.org/)
+
+### Making the Finmixer conda environment
+
 The following assumes a UNIX operating using the `conda` package manager. `conda` is preferred as it (in general) allows for easier installation of the `gdal` dependency than, for instance, `pip`. Whilst this package was developed on a UNIX system, the following commands (or similar) should be possible on a Windows OS using an Anaconda prompt. 
 
 First, *clone* the repository into a local directory:
@@ -48,11 +52,15 @@ pip install -e .
 
 This command installs the `funmixer` python package that can then be imported as normal (e.g., `import funmixer`).
 
-### Problem solving
+#### Problem solving
 
 If you encounter any problems with installation you can contact us or raise an issue on this repository. Based on user feedback, some common problems and solutions are given below:
 
 - If you're having problems related to permissions, try using `sudo` before the `pip` command (e.g., `sudo pip install -e .`).
+
+### Using apptainer
+
+[Apptainer](https://apptainer.org/) is a program for making containers--self contained environments for computing. We supply a file, `funmixer_container.def`, that builds a container for funmixer, and the file `readme_apptainer.md` which contains instruction on how to use it. The advantage of apptainer is you can build the container and then copy that file (a single file with the extension `.sif`) to any computer with apptainer installed (which includes all modern linux systems by default) and run Funmixer immediately. 
 
 
 ## Testing

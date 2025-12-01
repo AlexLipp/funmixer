@@ -1,0 +1,119 @@
+Bootstrap: docker
+From: ubuntu:22.04
+
+%labels
+    Author "Simon Mudd"
+    Description "Ubuntu 22.04 + Miniforge (mamba) + conda env from requirements.yaml + funmixer"
+    Base "ubuntu:22.04"
+    Repo "https://github.com/AlexLipp/funmixer"
+
+%files
+    # Place requirements.yaml alongside this .def
+    ./requirements.yaml /opt/env/requirements.yaml
+
+%environment
+    # Runtime env (NOT used during build)
+    export CONDA_DIR=/opt/miniforge
+    export MAMBA_ROOT_PREFIX=/opt/miniforge
+    export ENV_NAME=funmixer
+    export APP_HOME=/opt/src/funmixer
+    # Put the env and conda on PATH at runtime
+    export PATH=$CONDA_DIR/envs/$ENV_NAME/bin:$CONDA_DIR/bin:$PATH
+    export PYTHONUNBUFFERED=1
+    export PIP_NO_CACHE_DIR=1
+
+%post
+    # Build-time shell (variables must be set here to be usable now)
+    set -eux
+    export DEBIAN_FRONTEND=noninteractive
+
+    # --- Define variables for build-time use ---
+    CONDA_DIR=/opt/miniforge
+    MAMBA_ROOT_PREFIX=/opt/miniforge
+    ENV_NAME=funmixer
+    APP_HOME=/opt/src/funmixer
+
+    # --- OS packages (kept minimal but sufficient for most builds) ---
+    apt-get update
+    apt-get update && apt-get install -y \
+        wget \
+        ca-certificates \
+        bzip2 \
+        pkg-config \
+        unzip \
+        git \
+        curl \
+        tar \
+	    libgdal-dev \
+        gdal-bin \
+	    vim \
+        build-essential \
+	    cmake \
+        python3 \
+        python3-pip \
+        python3-gdal \
+        && apt-get clean
+        
+    rm -rf /var/lib/apt/lists/*
+
+    # --- Install Miniforge (brings conda + mamba) ---
+    mkdir -p /tmp/mforge && cd /tmp/mforge
+    ARCH="$(uname -m)"
+    case "$ARCH" in
+      x86_64)  INST="Miniforge3-Linux-x86_64.sh" ;;
+      aarch64) INST="Miniforge3-Linux-aarch64.sh" ;;
+      ppc64le) INST="Miniforge3-Linux-ppc64le.sh" ;;
+      *) echo "Unsupported arch: $ARCH" >&2; exit 1 ;;
+    esac
+    curl -fsSL "https://github.com/conda-forge/miniforge/releases/latest/download/${INST}" -o miniforge.sh
+    bash miniforge.sh -b -p "$CONDA_DIR"
+    cd /
+    rm -rf /tmp/mforge
+
+    # Configure conda/mamba; no need to 'activate'
+    "$CONDA_DIR/bin/conda" config --system --set always_yes yes --set changeps1 no
+    "$CONDA_DIR/bin/conda" config --system --set auto_activate_base false
+    "$CONDA_DIR/bin/conda" --version
+    "$CONDA_DIR/bin/mamba" --version
+
+    # CWD sanity check (should be /):
+    pwd || true
+
+
+    "$CONDA_DIR/bin/mamba" create -n "$ENV_NAME" -y \
+            python=3.11 \
+            cvxpy \
+            cython \
+            gdal \
+            hypothesis \
+            matplotlib \
+            networkx \
+            numpy \
+            pandas \
+            pygraphviz \
+            pytest \
+            tqdm \
+            graphviz \
+
+
+
+    # --- Create the conda env from requirements.yaml (with mamba) ---
+    "$CONDA_DIR/envs/$ENV_NAME/bin/python" -m pip install --upgrade pip
+
+    # --- Clone repo and install package into the env ---
+    # This will install the latest version of funmixer
+    mkdir -p /opt/src
+    git clone --depth 1 https://github.com/AlexLipp/funmixer.git "$APP_HOME"
+    "$CONDA_DIR/envs/$ENV_NAME/bin/pip" install --no-cache-dir "$APP_HOME"
+
+    # --- Optional cleanup ---
+    "$CONDA_DIR/bin/conda" clean -a -y || true
+    rm -rf /root/.cache/pip
+
+%runscript
+    # Run Python from the conda env by default
+    exec /opt/miniforge/envs/funmixer/bin/python "$@"
+
+%test
+    set -eux
+    /opt/miniforge/envs/funmixer/bin/python -c "import sys, platform; print('PY:', sys.executable); print('VER:', platform.python_version())"
