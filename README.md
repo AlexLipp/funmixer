@@ -22,7 +22,7 @@ Some common data input problems can be solved by:
 
 Funmixer has some python package dependencies so you will need to install these before you can run Funmixer. You can do this by either creating a [conda environment](https://docs.conda.io/projects/conda/en/latest/user-guide/tasks/manage-environments.html) or by creating an [apptainer container](https://apptainer.org/)
 
-### Making the Finmixer conda environment
+### Making the Funmixer conda environment
 
 The following assumes a UNIX operating using the `conda` package manager. `conda` is preferred as it (in general) allows for easier installation of the `gdal` dependency than, for instance, `pip`. Whilst this package was developed on a UNIX system, the following commands (or similar) should be possible on a Windows OS using an Anaconda prompt. 
 
