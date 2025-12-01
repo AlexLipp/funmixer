@@ -84,7 +84,7 @@ This will take some time. Even on a fast internet connection it can take 10 minu
 
 ## Now run the container
 
-You should now have a file called `funmixer_container.sif`. This is the actual container. It has a functioning Ubuntu operating system and python environemt on it, so it is not small: 250 Mb.
+You should now have a file called `funmixer_container.sif`. This is the actual container. It has a functioning Ubuntu operating system and python environemt on it, so it is not small: 250 MB.
 
 To run the container, use
 
@@ -109,4 +109,5 @@ The path before the `:` is the path on your computer, and the path after is the 
 
 * Version 1.0 Simon Mudd 27-Nov-2025. First version of the container.
 * Version 1.1 Simon Mudd 01-Dec-2025. Changed relative paths, placed the .def file in main repository, and updated instructions.
+
 
