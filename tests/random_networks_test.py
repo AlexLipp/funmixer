@@ -87,6 +87,7 @@ def generate_random_sample_network(
             total_upstream_area=0,
             label=0,
             upstream_nodes=[],
+            distance_downstream=1.0,
         )
         i += 1
     return G
@@ -113,6 +114,7 @@ def generate_balanced_sample_network(
             total_upstream_area=0,
             label=0,
             upstream_nodes=[],
+            distance_downstream=1.0,
         )
         i += 1
     return G
@@ -140,6 +142,7 @@ def generate_r_ary_sample_network(
             total_upstream_area=0,
             label=0,
             upstream_nodes=[],
+            distance_downstream=1.0,
         )
         i += 1
     return G

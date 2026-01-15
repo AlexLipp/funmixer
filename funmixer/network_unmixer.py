@@ -60,6 +60,7 @@ class SampleNode:
         x: The x-coordinate of the sample location.
         y: The y-coordinate of the sample location.
         downstream_node: The name of the downstream neighbor.
+        distance_downstream: The distance (along flow paths) to downstream neighbor.
         upstream_nodes: The name of the upstream neighbors.
         area: The area of the sub-basin defined by node (in the units of the D8 raster).
         total_upstream_area: The total area of sub-basin and all upstream neighbors (in the units of the D8 raster).
@@ -82,8 +83,9 @@ class SampleNode:
     upstream_nodes: List[str]
     area: float
     total_upstream_area: int
-    # Properties added dynamically by Python
+    distance_downstream: float
     label: int
+    # Properties added dynamically by Python
     my_flux: Optional[Union[float, cp.Expression]] = None
     my_total_flux: Union[float, cp.Expression] = 0.0
     my_total_tracer_flux: Union[float, cp.Expression] = 0.0
@@ -104,6 +106,7 @@ class SampleNode:
             area=n.area,
             total_upstream_area=n.total_upstream_area,
             label=n.label,
+            distance_downstream=n.distance_to_parent,
         )
 
 
