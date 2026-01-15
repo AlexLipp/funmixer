@@ -354,8 +354,8 @@ def count_distance_between(int up_node, int down_node, cnp.ndarray[cnp.int64_t, 
         distance += dir_dist_dict[direction]
         up_node = receivers[up_node]
         if direction == 0:
-            if up_node != down_node:
-                print("Warning: reached a sink node before the downstream node!")
+            # if up_node != down_node:
+            #     print("Warning: reached a sink node before the downstream node!")
             break
     return distance
 
@@ -425,11 +425,7 @@ def build_samplesite_graph(
             my_current_label = labels[node]
             parent = sample_parent_graph[my_current_label]
 
-            print("-"*40)
-            print(f"Found upstream node {node}, corresponding sample site is {sample_dict[node]['name']}")
-            print(f"{sample_dict[node]['name']} has a parent sample site {parent.data.name}, at D8 node {parent.d8_node} (equal to: {sample_dict[parent.d8_node]['name'] if parent.d8_node in sample_dict else 'N/A'})")
             distance = count_distance_between(up_node = node, down_node = parent.d8_node, arr = arr, receivers = receivers, dir_dist_dict = dir_to_dist)
-            print(f"Distance between {sample_dict[node]['name']} and {parent.data.name} is {distance}")
             parent.upstream_nodes.append(data.name)  # Add the sample site name to the parent node's upstream nodes
             sample_parent_graph.append(
                 NativeSampleNode.make_w_downstream_and_sample(my_current_label, data, node, distance)
