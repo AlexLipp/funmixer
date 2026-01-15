@@ -390,15 +390,15 @@ class SampleNetworkUnmixer:
             self._primary_terms.append(misfit)
 
             if (ds := nx_get_downstream_data(self.sample_network, sample_name)) is not None:
-                # # Get the distance between the nodes
-                # ds_downstream = self.sample_network[sample_name][ds.name]["length"]
+                # Get the distance between the nodes
+                ds_downstream = self.sample_network[sample_name][ds.name]["length"]
+                k = 0.0001
                 # Add our flux to downstream node's
                 ds.my_total_flux += my_data.my_total_flux
-                # Add our *tracer* flux to the downstream node's
-                ds.my_total_tracer_flux += my_data.my_total_tracer_flux
-
-                # # Add our *tracer* flux to the downstream node's weighted by exponential decay
-                # ds.my_total_tracer_flux += my_data.my_total_tracer_flux * cp.exp(-k*ds_downstream)
+                # Add our *tracer* flux to the downstream node's # weighted by exponential decay
+                ds.my_total_tracer_flux += my_data.my_total_tracer_flux * np.exp(
+                    -k * ds_downstream
+                )  # First order rate equation for decay
 
     def _build_regularizer_terms(self) -> None:
         """
