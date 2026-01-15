@@ -386,6 +386,16 @@ class D8Accumulator:
         miny = maxy + trsfm[5] * self.arr.shape[0]
         return [minx, maxx, miny, maxy]
 
+    @property
+    def dx(self) -> float:
+        """Get the cell size in the x direction"""
+        return self.ds.GetGeoTransform()[1]
+
+    @property
+    def dy(self) -> float:
+        """Get the cell size in the y direction"""
+        return self.ds.GetGeoTransform()[5]
+
     def _check_valid_node(self, node: int) -> None:
         """Checks if a node is valid"""
         if node < 0 or node >= self.arr.size:
@@ -477,7 +487,9 @@ def get_sample_graph(
 
     # Build the sample site graph using the Cython functions for efficiency
     print("Building sample site graph...")
-    labels, graph = cf.build_samplesite_graph(acc.receivers, acc.baselevel_nodes, sample_dict)
+    labels, graph = cf.build_samplesite_graph(
+        acc.receivers, acc.baselevel_nodes, sample_dict, acc.dx, acc.dy * -1
+    )
 
     # Convert the native (Cython) sample nodes to Python SampleNode objects
     sample_nodes = [SampleNode.from_native(node) for node in graph]
@@ -488,6 +500,6 @@ def get_sample_graph(
             continue
         sample_network.add_node(node.name, data=node)
         if sample_nodes[node.downstream_node].name != cf.ROOT_NODE_NAME:
-            sample_network.add_edge(node.name, sample_nodes[node.downstream_node].name)
+            sample_network.add_edge(node.name, sample_nodes[node.downstream_node].name, length=1)
 
     return sample_network, np.reshape(labels, acc.arr.shape)

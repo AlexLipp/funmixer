@@ -53,7 +53,26 @@ def not_none(x: Optional[T]) -> T:
 @dataclass
 class SampleNode:
     """
-    A class to represent a sample node in a Sample Network.
+    A class to represent a nested sample site & sub-basin in a drainage network.
+
+    Attributes (derived from D8 raster)
+        name: The name of the sample node.
+        x: The x-coordinate of the sample location.
+        y: The y-coordinate of the sample location.
+        downstream_node: The name of the downstream neighbor.
+        upstream_nodes: The name of the upstream neighbors.
+        area: The area of the sub-basin defined by node (in the units of the D8 raster).
+        total_upstream_area: The total area of sub-basin and all upstream neighbors (in the units of the D8 raster).
+
+    Attributes (set dynamically by Python)
+        label: The label of the sample node (an integer corresponding to its position in the network).
+        my_flux: The flux of material leaving the sample node (i.e., area multiplied by export rate [if set])
+        my_total_flux: The total flux of material leaving the sample node (i.e., total_upstream_area multiplied by export rate [if set])
+        my_tracer_flux: The flux of tracer leaving the sample node
+        my_tracer_value: The value (i.e., observed concentration) of tracer at the sample site
+        rltv_area: The relative area of the sample node (i.e., area divided by total_upstream_area)
+        total_flux: The total flux of material leaving the sample node (i.e., sum of all fluxes upstream of site inclusive)
+        my_export_rate: The rate at which sub-basin is producing material (e.g., runoff, erosion rate etc...), defaults to 1
     """
 
     name: str
@@ -368,10 +387,15 @@ class SampleNetworkUnmixer:
             self._primary_terms.append(misfit)
 
             if (ds := nx_get_downstream_data(self.sample_network, sample_name)) is not None:
+                # # Get the distance between the nodes
+                # ds_downstream = self.sample_network[sample_name][ds.name]["length"]
                 # Add our flux to downstream node's
                 ds.my_total_flux += my_data.my_total_flux
                 # Add our *tracer* flux to the downstream node's
                 ds.my_total_tracer_flux += my_data.my_total_tracer_flux
+
+                # # Add our *tracer* flux to the downstream node's weighted by exponential decay
+                # ds.my_total_tracer_flux += my_data.my_total_tracer_flux * cp.exp(-k*ds_downstream)
 
     def _build_regularizer_terms(self) -> None:
         """

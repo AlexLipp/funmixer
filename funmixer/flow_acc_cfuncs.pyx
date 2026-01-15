@@ -45,16 +45,16 @@ cdef class NativeSampleNode:
     cdef public SampleData data
     cdef public cnp.int64_t downstream_node
     cdef public list upstream_nodes
-    cdef public cnp.int64_t area
-    cdef public cnp.int64_t total_upstream_area
+    cdef public cnp.float64_t area
+    cdef public cnp.float64_t total_upstream_area
     cdef public cnp.int64_t label
 
     def __cinit__(self):
         self.data = SampleData()
         self.downstream_node = NO_DOWNSTREAM_NEIGHBOUR
         self.upstream_nodes = []
-        self.area = 0
-        self.total_upstream_area = 0
+        self.area = 0.
+        self.total_upstream_area = 0.
         self.label = -1  # Default label, will be set later
 
     @staticmethod
@@ -323,6 +323,8 @@ def build_samplesite_graph(
     cnp.int64_t[:] receivers, 
     cnp.ndarray[cnp.int64_t, ndim=1] baselevel_nodes, 
     dict[int, dict[str,object]] sample_dict,
+    cnp.float64_t dx,
+    cnp.float64_t dy,
     ):
     """
     Creates a map of subbasins, where each subbasin is assigned a unique ID from 0 (baselevel) to n (number of subbasins). 
@@ -334,6 +336,8 @@ def build_samplesite_graph(
         baselevel_nodes: The baselevel nodes to start from (i.e., sink-nodes).
         sample_dict: A dictionary mapping sample site nodes to their metadata,
         where keys are node indices and metadata is a dictionary with keys "name", "x", and "y".
+        dx: The cell size in the x direction (float).
+        dy: The cell size in the y direction (float).
     """
     # Initialize variables
     cdef int nr = len(receivers)
@@ -346,6 +350,8 @@ def build_samplesite_graph(
     cdef cnp.int64_t my_current_label
     cdef NativeSampleNode parent
     cdef SampleData data
+    # Create a variable to contain the cell area which is product of dx and dy
+    cdef double cell_area = dx * dy
     # Initialize the sample parent graph as a list of NativeSampleNode
     cdef list sample_parent_graph = []
     # Initialize a queue for breadth-first search
@@ -380,7 +386,7 @@ def build_samplesite_graph(
 
         # Get the label of the current node
         my_label = labels[node]
-        sample_parent_graph[my_label].area += 1  # Increment the area of the sample node
+        sample_parent_graph[my_label].area += cell_area  # Increment the area of the sample node by the cell area
 
         # Loop through the donors of the node and add them to the queue
         for n in range(delta[node], delta[node + 1]):
@@ -392,10 +398,10 @@ def build_samplesite_graph(
     # Calculate the total upstream areas for each sample node having built the sample parent graph
     calculate_total_upstream_areas(sample_parent_graph)
     # Check that the total upstream area of the root node is equal to the number of pixels
-    if sample_parent_graph[0].total_upstream_area != nr:
-        raise ValueError("Total upstream area of root node does not match the number of pixels in the flow direction array!")
-
-    # Loop through the sample parent graph to assign labels
+    if sample_parent_graph[0].total_upstream_area != len(receivers) * cell_area:
+        raise ValueError(f"Total upstream area of root node ({sample_parent_graph[0].total_upstream_area}) does not match" + \
+            f" the expected number from flow direction array ({len(receivers) * cell_area})!")
+        # Loop through the sample parent graph to assign labels
     for i in range(len(sample_parent_graph)):
         # Assign the label to the sample parent node
         sample_parent_graph[i].label = i  # Assign the label to the sample parent node
