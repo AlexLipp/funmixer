@@ -609,7 +609,6 @@ class SampleNetworkUnmixer:
         relative_error: float,
         num_repeats: int,
         export_rates: Optional[ExportRateData] = None,
-        rate_constants: Optional[RateConstantData] = None,
         regularization_strength: Optional[float] = None,
         solver: str = "clarabel",
     ) -> Tuple[DefaultDict[str, List[float]], Dict[str, List[float]]]:
@@ -659,7 +658,6 @@ class SampleNetworkUnmixer:
                 solver=solver,
                 regularization_strength=regularization_strength,
                 export_rates=export_rates,
-                rate_constants=rate_constants,
             )  # Solve problem
             for sample_name, v in solution.downstream_preds.items():
                 predictions_down_mc[sample_name].append(v)
