@@ -82,7 +82,7 @@ class SampleNode:
     downstream_node: Optional[str]
     upstream_nodes: List[str]
     area: float
-    total_upstream_area: int
+    total_upstream_area: float
     distance_downstream: float
     label: int
     my_flux: Optional[Union[float, cp.Expression]] = None

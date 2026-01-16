@@ -59,7 +59,7 @@ cdef class NativeSampleNode:
         self.total_upstream_area = 0.
         self.label = -1  # Default label, will be set later
         self.d8_node = -1  # Default D8 node, will be set later
-        self.distance_to_parent = -1 # Default distance, will be set later
+        self.distance_to_parent = -1  # Default distance, will be set later
 
     @staticmethod
     def make_root_node():
@@ -450,7 +450,7 @@ def build_samplesite_graph(
     if sample_parent_graph[0].total_upstream_area != len(receivers) * cell_area:
         raise ValueError(f"Total upstream area of root node ({sample_parent_graph[0].total_upstream_area}) does not match" + \
             f" the expected number from flow direction array ({len(receivers) * cell_area})!")
-        # Loop through the sample parent graph to assign labels
+    # Loop through the sample parent graph to assign labels
     for i in range(len(sample_parent_graph)):
         # Assign the label to the sample parent node
         sample_parent_graph[i].label = i  # Assign the label to the sample parent node
