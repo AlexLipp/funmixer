@@ -56,7 +56,7 @@ class SampleNode:
     """
     A class to represent a nested sample site & sub-basin in a drainage network.
 
-    Attributes (derived from D8 raster)
+    Attributes
         name: The name of the sample node.
         x: The x-coordinate of the sample location.
         y: The y-coordinate of the sample location.
@@ -65,8 +65,6 @@ class SampleNode:
         upstream_nodes: The name of the upstream neighbors.
         area: The area of the sub-basin defined by node (in the units of the D8 raster).
         total_upstream_area: The total area of sub-basin and all upstream neighbors (in the units of the D8 raster).
-
-    Attributes (set dynamically by Python)
         label: The label of the sample node (an integer corresponding to its position in the network).
         my_flux: The flux of material leaving the sample node (i.e., area multiplied by export rate [if set])
         my_total_flux: The total flux of material leaving the sample node (i.e., total_upstream_area multiplied by export rate [if set])
@@ -87,7 +85,6 @@ class SampleNode:
     total_upstream_area: int
     distance_downstream: float
     label: int
-    # Properties added dynamically by Python
     my_flux: Optional[Union[float, cp.Expression]] = None
     my_total_flux: Union[float, cp.Expression] = 0.0
     my_total_tracer_flux: Union[float, cp.Expression] = 0.0
