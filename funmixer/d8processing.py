@@ -487,6 +487,8 @@ def get_sample_graph(
 
     # Build the sample site graph using the Cython functions for efficiency
     print("Building sample site graph...")
+    # Note: acc.dy comes from GDAL's GeoTransform()[5], which is typically negative for north-up rasters.
+    # We multiply by -1 here so that build_samplesite_graph receives a positive cell size in the y-direction.
     labels, graph = cf.build_samplesite_graph(
         acc.receivers, acc.baselevel_nodes, acc.arr.flatten(), sample_dict, acc.dx, acc.dy * -1
     )
