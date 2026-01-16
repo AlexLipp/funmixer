@@ -19,11 +19,15 @@ def max_height_of_balanced_tree(N: int, branching_factor: int) -> int:
 
 # Set the range to explore upstream concentration values over
 MINIMUM_CONC = 1
-MAXIMUM_CONC = 1e2
+MAXIMUM_CONC = 1e2  # Largest sub-basin source concentration is 100x larger than the smallest
 
 # Set the range to explore sub-basin area values over
 MINIMUM_AREA = 1
-MAXIMUM_AREA = 1e2
+MAXIMUM_AREA = 1e2  # Largest sub-basin is 100x larger than the smallest
+
+# Set the range of rate parameters to explore ranges over
+MIN_RATE_PARAMETER = 0  # When rate parameter = 0 results in fully conservative behaviour
+MAX_RATE_PARAMETER = 3  # When rate parameter = 3 results in 95% reduction of each tracer 'decaying' between nodes (~fully non-conservative)
 
 # Maximum number of nodes in a random network
 MAXIMUM_NUMBER_OF_NODES = 100
@@ -74,6 +78,9 @@ def generate_random_sample_network(
     G = nx.random_tree(N, create_using=nx.DiGraph, seed=seed)
     # Flip the tree upside down
     G = nx.reverse(G)
+    # Set the "length" of all edges to 1
+    for u, v in G.edges:
+        G[u][v]["length"] = 1.0
     # Loop through nodes and add SampleNode objects to ["data"] property
     i = 0
     for node in G.nodes:
@@ -101,6 +108,9 @@ def generate_balanced_sample_network(
     """
     G = nx.balanced_tree(r=branching_factor, h=height, create_using=nx.DiGraph)
     G = G.reverse()
+    # Set the "length" of all edges to 1
+    for u, v in G.edges:
+        G[u][v]["length"] = 1.0
     # Loop through nodes and add SampleNode objects to ["data"] property
     i = 0
     for node in G.nodes:
@@ -129,6 +139,9 @@ def generate_r_ary_sample_network(
     # Check that areas and N are compatible
     G = nx.full_rary_tree(r=branching_factor, n=N, create_using=nx.DiGraph)
     G = G.reverse()
+    # Set the "length" of all edges to 1
+    for u, v in G.edges:
+        G[u][v]["length"] = 1.0
     # Loop through nodes and add SampleNode objects to ["data"] property
     i = 0
     for node in G.nodes:
@@ -190,6 +203,8 @@ def generate_r_ary_sample_network(
 @given(
     branching_factor=st.integers(min_value=1, max_value=MAXIMUM_BRANCHING_FACTOR),
     height=st.integers(min_value=1, max_value=MAXIMUM_HEIGHT),
+    rate_constant=st.floats(min_value=MIN_RATE_PARAMETER, max_value=MAX_RATE_PARAMETER),
+    conservative=st.booleans(),
     min_area=st.floats(min_value=MINIMUM_AREA, max_value=MAXIMUM_AREA),
     max_area=st.floats(min_value=MINIMUM_AREA, max_value=MAXIMUM_AREA),
     min_conc=st.floats(min_value=MINIMUM_CONC, max_value=MAXIMUM_CONC),
@@ -199,6 +214,8 @@ def generate_r_ary_sample_network(
 def test_balanced_network(
     branching_factor: int,
     height: int,
+    rate_constant: float,
+    conservative: bool,  # Boolean that determines if the model is to be run conservatively or not
     min_area: float,
     max_area: float,
     min_conc: float,
@@ -215,12 +232,18 @@ def test_balanced_network(
 
     areas = lambda: draw_random_log_uniform(min_area, max_area)
     concentrations = lambda: draw_random_log_uniform(min_conc, max_conc)
+
     network = generate_balanced_sample_network(
         branching_factor=branching_factor, height=height, areas=areas
     )
     upstream = conc_list_to_dict(network, concentrations)
-    downstream = funmixer.forward_model(sample_network=network, upstream_concentrations=upstream)
-    problem = funmixer.SampleNetworkUnmixer(sample_network=network, use_regularization=False)
+    rate_constants = None if conservative else {node: rate_constant for node in network.nodes}
+    downstream = funmixer.forward_model(
+        sample_network=network, upstream_concentrations=upstream, rate_constants=rate_constants
+    )
+    problem = funmixer.SampleNetworkUnmixer(
+        sample_network=network, use_regularization=False, rate_constants=rate_constants
+    )
     solution = problem.solve(downstream)
 
     # Check that the recovered upstream concentrations are within 0.1% of the true upstream concentrations using
@@ -235,6 +258,8 @@ def test_balanced_network(
 @given(
     branching_factor=st.integers(min_value=1, max_value=MAXIMUM_BRANCHING_FACTOR),
     N=st.integers(min_value=2, max_value=MAXIMUM_NUMBER_OF_NODES),
+    rate_constant=st.floats(min_value=MIN_RATE_PARAMETER, max_value=MAX_RATE_PARAMETER),
+    conservative=st.booleans(),
     min_area=st.floats(min_value=MINIMUM_AREA, max_value=MAXIMUM_AREA),
     max_area=st.floats(min_value=MINIMUM_AREA, max_value=MAXIMUM_AREA),
     min_conc=st.floats(min_value=MINIMUM_CONC, max_value=MAXIMUM_CONC),
@@ -244,6 +269,8 @@ def test_balanced_network(
 def test_rary_network(
     branching_factor: int,
     N: int,
+    rate_constant: float,
+    conservative: bool,
     min_area: float,
     max_area: float,
     min_conc: float,
@@ -262,8 +289,13 @@ def test_rary_network(
     concentrations = lambda: draw_random_log_uniform(min_conc, max_conc)
     network = generate_r_ary_sample_network(N=N, branching_factor=branching_factor, areas=areas)
     upstream = conc_list_to_dict(network, concentrations)
-    downstream = funmixer.forward_model(sample_network=network, upstream_concentrations=upstream)
-    problem = funmixer.SampleNetworkUnmixer(sample_network=network, use_regularization=False)
+    rate_constants = None if conservative else {node: rate_constant for node in network.nodes}
+    downstream = funmixer.forward_model(
+        sample_network=network, upstream_concentrations=upstream, rate_constants=rate_constants
+    )
+    problem = funmixer.SampleNetworkUnmixer(
+        sample_network=network, use_regularization=False, rate_constants=rate_constants
+    )
     solution = problem.solve(downstream)
 
     # Check that the recovered upstream concentrations are within 0.1% of the true upstream concentrations using

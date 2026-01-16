@@ -41,6 +41,7 @@ ELEMENT_LIST: Final[List[str]] = ["H", "He", "Li", "Be", "B", "C", "N", "O", "F"
 
 ElementData = Dict[str, float]
 ExportRateData = Dict[str, float]
+RateConstantData = Dict[str, float]
 
 T = TypeVar("T")
 
@@ -74,6 +75,7 @@ class SampleNode:
         rltv_area: The relative area of the sample node (i.e., area divided by total_upstream_area)
         total_flux: The total flux of material leaving the sample node (i.e., sum of all fluxes upstream of site inclusive)
         my_export_rate: The rate at which sub-basin is producing material (e.g., runoff, erosion rate etc...), defaults to 1
+        my_rate_constant: The 1st order rate constant of the tracer from sub-basin to next sub-basin, defaults to 0 (i.e., conservative)
     """
 
     name: str
@@ -94,6 +96,7 @@ class SampleNode:
     rltv_area: float = -np.inf  # Obviously bad value
     total_flux: Optional[cp.Expression] = None
     my_export_rate: cp.Parameter = field(default_factory=lambda: cp.Parameter(pos=True))
+    my_rate_constant: float = 0.0
 
     @classmethod
     def from_native(cls, n: cf.NativeSampleNode) -> "SampleNode":
@@ -284,6 +287,7 @@ class SampleNetworkUnmixer:
         self,
         sample_network: nx.DiGraph,
         use_regularization: bool = True,
+        rate_constants: Optional[RateConstantData] = None,
     ) -> None:
         """
         Initialize the SampleNetworkUnmixer class.
@@ -291,17 +295,20 @@ class SampleNetworkUnmixer:
         Args:
             sample_network (nx.DiGraph): The sample network.
             use_regularization (bool): Flag indicating whether to use regularization.
+            rate_constants (Optional[RateConstantData]): The rate-constants for each reach/edge downstream of the site for the element. If not provided these are all set to 0 (i.e., conservative behaviour).
         """
 
         self.sample_network = sample_network
         self._site_to_observation: Dict[str, ReciprocalParameter] = {}
         self._site_to_export_rate: Dict[str, cp.Parameter] = {}
+        self._site_to_rate_constant: Dict[str, float] = {}
         self._site_to_total_flux: Dict[str, ReciprocalParameter] = {}
         self._primary_terms: List[cp.Expression] = []
         self._regularizer_terms: List[cp.Expression] = []
         self._constraints: List[cp.Constraint] = []
         self._regularizer_strength = cp.Parameter(nonneg=True)
         self._problem: Optional[cp.Problem] = None
+        self._set_rate_constants(rate_constants)
         self._build_primary_terms()
         if use_regularization:
             self._build_regularizer_terms()
@@ -347,7 +354,7 @@ class SampleNetworkUnmixer:
             # Value is set at runtime
             my_data.my_export_rate = cp.Parameter(pos=True)
             self._site_to_export_rate[my_data.name] = my_data.my_export_rate
-
+            my_data.my_rate_constant = self._site_to_rate_constant[my_data.name]
             # Area weighted total contribution of material from this node
             my_data.my_flux = my_data.my_export_rate * my_data.rltv_area
 
@@ -392,13 +399,12 @@ class SampleNetworkUnmixer:
             if (ds := nx_get_downstream_data(self.sample_network, sample_name)) is not None:
                 # Get the distance between the nodes
                 ds_downstream = self.sample_network[sample_name][ds.name]["length"]
-                k = 0.0
+                # Calculate the first order rate weighting for non conservative processes (assumed decay)
+                first_order_rate_weighting = np.exp(-my_data.my_rate_constant * ds_downstream)
                 # Add our flux to downstream node's
                 ds.my_total_flux += my_data.my_total_flux
-                # Add our *tracer* flux to the downstream node's # weighted by exponential decay
-                ds.my_total_tracer_flux += my_data.my_total_tracer_flux * np.exp(
-                    -k * ds_downstream
-                )  # First order rate equation for decay
+                # Add our *tracer* flux to the downstream node's weighted by 1st order rate equation
+                ds.my_total_tracer_flux += my_data.my_total_tracer_flux * first_order_rate_weighting
 
     def _build_regularizer_terms(self) -> None:
         """
@@ -474,6 +480,30 @@ class SampleNetworkUnmixer:
         for x in self._site_to_export_rate.values():
             assert x.value is not None
 
+    def _set_rate_constants(self, rate_constants: Optional[RateConstantData] = None) -> None:
+        """
+        Set the rate constants according to input rate constants. The NetworkUnmixer must be reinitialised to change these.
+        """
+
+        # Populate dictionary with the default rate constants initially
+        for data in nx_values(self.sample_network):
+            self._site_to_rate_constant[data.name] = data.my_rate_constant
+
+        # If rate_constants are provided, assign each one to a site, making sure that the site exists
+        if rate_constants:
+            for site, value in rate_constants.items():
+                assert site in self._site_to_rate_constant
+                self._site_to_rate_constant[site] = value
+
+        # Else, check that rate constant is set to default value of 0 (i.e., conservative behaviour)
+        else:
+            for x in self._site_to_rate_constant.values():
+                assert x == 0.0
+
+        # Ensure that all sites in the problem have a rate constant assigned
+        for x in self._site_to_rate_constant.values():
+            assert x is not None
+
     def _set_total_flux_parameters(self) -> None:
         """
         Reset and set the total flux parameters according to total fluxes calculated in network.
@@ -506,7 +536,7 @@ class SampleNetworkUnmixer:
 
         Args:
             observation_data: The observed data for each element.
-            export_rates: The export rates for each element. If not provided these are all set to 1.
+            export_rates: The export rates for each sub-catchment. If not provided these are all set to 1 (i.e., homogenous erosion/runoff).
             regularization_strength: The strength of the regularization term
             solver: The solver to use for solving the optimization problem (default is clarabel)
 
@@ -579,6 +609,7 @@ class SampleNetworkUnmixer:
         relative_error: float,
         num_repeats: int,
         export_rates: Optional[ExportRateData] = None,
+        rate_constants: Optional[RateConstantData] = None,
         regularization_strength: Optional[float] = None,
         solver: str = "clarabel",
     ) -> Tuple[DefaultDict[str, List[float]], Dict[str, List[float]]]:
@@ -594,6 +625,7 @@ class SampleNetworkUnmixer:
             relative_error: The *relative* error as a percentage to use for resampling the observation data.
             num_repeats: The number of times to repeat the Monte Carlo simulation.
             export_rates: The export rates for each element. If not provided these are all set to 1.
+            rate_constants: The rate-constants for each reach/edge downstream of the site for the element. If not provided these are all set to 0 (i.e., conservative behaviour).
             regularization_strength: The strength of the regularization term (default: None).
             solver: The solver to use for solving the optimization problem (default: "clarabel").
 
@@ -627,6 +659,7 @@ class SampleNetworkUnmixer:
                 solver=solver,
                 regularization_strength=regularization_strength,
                 export_rates=export_rates,
+                rate_constants=rate_constants,
             )  # Solve problem
             for sample_name, v in solution.downstream_preds.items():
                 predictions_down_mc[sample_name].append(v)
@@ -727,12 +760,14 @@ def forward_model(
     sample_network: nx.DiGraph,
     upstream_concentrations: ElementData,
     export_rates: Optional[ExportRateData] = None,
+    rate_constants: Optional[RateConstantData] = None,
 ) -> ElementData:
     """Predicts the downstream concentration at sample sites using a forward model.
     Args:
         sample_network: A sample_network of localities (see `get_sample_graphs`)
         upstream_concentrations: Dictionary of upstream concentrations at sample sites
         export_rates: Dictionary of export rates for each sub-catchment. Defaults to equal export rate in each sub-catchment.
+        rate_constants: Dictionary of rate constants for each sub-catchment. Defaults to zero (i.e., conservative behaviour).
     Returns:
         mixed_downstream_pred: Dictionary containing predicted downstream mixed concentration at each sample sites
     """
@@ -748,6 +783,10 @@ def forward_model(
         # pyre-fixme[8]: Attribute has type `Parameter`; used as `float`.
         my_data.my_export_rate = export_rates[sample_name] if export_rates else 1.0
 
+        # If provided, set rate constants from user input
+        # else default to zero (i.e., conservative behaviour)
+        my_data.my_rate_constant = rate_constants[sample_name] if rate_constants else 0.0
+
         # pyre-fixme[8]: Attribute has type `Optional[Expression]`; used as `float`.
         my_data.my_tracer_value = upstream_concentrations[sample_name]
         # area weighted total contribution of material from this node
@@ -758,6 +797,7 @@ def forward_model(
         # pyre-fixme[58]: `*` is not supported for operand types `Union[None,
         #  cp.expressions.expression.Expression, float]` and
         #  `Optional[cp.expressions.expression.Expression]`.
+
         my_data.my_tracer_flux = my_data.my_flux * my_data.my_tracer_value
         # Add the *tracer* flux I generate to the total flux of *tracer* passing through me
         my_data.my_total_tracer_flux += my_data.my_tracer_flux
@@ -767,8 +807,10 @@ def forward_model(
         if (ds := nx_get_downstream_data(sample_network, sample_name)) is not None:
             # Add our flux to downstream node's
             ds.my_total_flux += my_data.my_total_flux
+            downstream_distance = sample_network[sample_name][ds.name]["length"]
+            first_order_rate_weighting = np.exp(-my_data.my_rate_constant * downstream_distance)
             # Add our *tracer* flux to the downstream node's
-            ds.my_total_tracer_flux += my_data.my_total_tracer_flux
+            ds.my_total_tracer_flux += my_data.my_total_tracer_flux * first_order_rate_weighting
 
     return mixed_downstream_pred
 
@@ -778,6 +820,7 @@ def mix_downstream(
     areas: Dict[str, npt.NDArray[np.float64]],
     concentration_map: npt.NDArray[np.float64],
     export_rates: Optional[ExportRateData] = None,
+    rate_constants: Optional[RateConstantData] = None,
 ) -> Tuple[ElementData, ElementData]:
     """Mixes a given concentration map along drainage, predicting the downstream concentration at sample sites
     Args:
@@ -786,6 +829,7 @@ def mix_downstream(
         concentration_map: A 2D map of concentrations which is to be mixed along drainage. Must have same dimensions
         as base flow-direction map/DEM
         export_rates: Dictionary of export rates for each sub-catchment. Defaults to equal export rate in each sub-catchment.
+        rate_constants: Dictionary of rate constants for each sub-catchment. Defaults to zero (i.e., conservative behaviour).
     Returns:
         mixed_downstream_pred: Dictionary containing predicted downstream mixed concentration at each sample sites
         mixed_upstream_pred: Dictionary containing the average concentration of `concentration_map` in each sub-basin
@@ -795,7 +839,9 @@ def mix_downstream(
         sample_name: float(np.mean(concentration_map[area])) for sample_name, area in areas.items()
     }
     # Predict downstream concentration at each sample site
-    mixed_downstream_pred = forward_model(sample_network, mixed_upstream_pred, export_rates)
+    mixed_downstream_pred = forward_model(
+        sample_network, mixed_upstream_pred, export_rates, rate_constants
+    )
     return mixed_downstream_pred, mixed_upstream_pred
 
 
@@ -823,6 +869,7 @@ def plot_sweep_of_regularizer_strength(
     max_: float,
     trial_num: int,
     export_rates: Optional[ExportRateData] = None,
+    rate_constants: Optional[RateConstantData] = None,
 ) -> None:
     """
     Plot a sweep of regularization strengths and their impact on roughness and data misfit.
@@ -833,7 +880,8 @@ def plot_sweep_of_regularizer_strength(
         min_: The minimum exponent for the logspace range of regularization strengths to try.
         max_: The maximum exponent for the logspace range of regularization strengths to try.
         trial_num: The number of regularization strengths to try within the specified range.
-        export_rates: Dictionary of export rates for each sub-catchment. Defaults to equal export rate in each sub-catchment
+        export_rates: Dictionary of export rates for each sub-catchment. Defaults to equal export rate in each sub-catchment.
+        rate_constants: Dictionary of rate constants for each sub-catchment. Defaults to zero (i.e., conservative behaviour).
 
     Note:
         The function performs a sweep of regularization strengths within a specified logspace range and plots their
@@ -856,6 +904,7 @@ def plot_sweep_of_regularizer_strength(
             element_data,
             regularization_strength=val,
             export_rates=export_rates,
+            rate_constants=rate_constants,
         )
         roughness = sample_network.get_roughness()
         misfit = sample_network.get_misfit()
