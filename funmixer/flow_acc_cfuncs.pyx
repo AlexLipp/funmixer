@@ -59,7 +59,7 @@ cdef class NativeSampleNode:
         self.total_upstream_area = 0.
         self.label = -1  # Default label, will be set later
         self.d8_node = -1  # Default D8 node, will be set later
-        self.distance_to_parent = -1 # Default distance, will be set later
+        self.distance_to_parent = -1  # Default distance, will be set later
 
     @staticmethod
     def make_root_node():
