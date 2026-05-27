@@ -45,17 +45,21 @@ cdef class NativeSampleNode:
     cdef public SampleData data
     cdef public cnp.int64_t downstream_node
     cdef public list upstream_nodes
-    cdef public cnp.int64_t area
-    cdef public cnp.int64_t total_upstream_area
+    cdef public cnp.float64_t area
+    cdef public cnp.float64_t total_upstream_area
     cdef public cnp.int64_t label
+    cdef public cnp.int64_t d8_node
+    cdef public cnp.float64_t distance_to_parent
 
     def __cinit__(self):
         self.data = SampleData()
         self.downstream_node = NO_DOWNSTREAM_NEIGHBOUR
         self.upstream_nodes = []
-        self.area = 0
-        self.total_upstream_area = 0
+        self.area = 0.
+        self.total_upstream_area = 0.
         self.label = -1  # Default label, will be set later
+        self.d8_node = -1  # Default D8 node, will be set later
+        self.distance_to_parent = -1  # Default distance, will be set later
 
     @staticmethod
     def make_root_node():
@@ -66,16 +70,19 @@ cdef class NativeSampleNode:
         temp = NativeSampleNode()
         temp.label = 0  # Root node label
         temp.data.name = ROOT_NODE_NAME
+        temp.d8_node = 0 # Set to (arbitrarily) be the top-left corner (which MUST be a sink anyway)
         return temp
 
     @staticmethod
-    def make_w_downstream_and_sample(cnp.int64_t downstream_node, SampleData sample_data):
+    def make_w_downstream_and_sample(cnp.int64_t downstream_node, SampleData sample_data, cnp.int64_t d8_node, cnp.float64_t distance_to_parent):
         """
         Factory method to create a node with a downstream neighbour and sample data.
         """
         cdef NativeSampleNode temp = NativeSampleNode()
         temp.downstream_node = downstream_node
         temp.data = sample_data
+        temp.d8_node = d8_node
+        temp.distance_to_parent = distance_to_parent
         return temp
 
 ### The following functions are related to the D8 flow direction array and its processing ###
@@ -316,13 +323,51 @@ def calculate_total_upstream_areas(list sample_graph):
         if deps[self.downstream_node] == 0:
             q.push(self.downstream_node)  # If no more dependencies, add to the queue
 
+@cython.boundscheck(False)  # Deactivate bounds checking
+@cython.wraparound(False)   # Deactivate negative indexing.
+def get_d8_dir_to_dist_dict(cnp.float64_t dx, cnp.float64_t dy):
+    """
+    Creates a dictionary mapping the directions of a D8 raster to absolute distance across a grid with dimensions dx and dy
+    """
+    cdef dict d8_dir_to_dist = {
+        0: 0, # Sink
+        1: dx, # Right
+        2: np.sqrt(dx**2 + dy**2), # Down-Right
+        4: dy, # Down
+        8: np.sqrt(dx**2 + dy**2), # Down-Left
+        16: dx, # Left
+        32: np.sqrt(dx**2 + dy**2), # Up-Left
+        64: dy, # Up
+        128: np.sqrt(dx**2 + dy**2), # Up-Right
+    }
+    return d8_dir_to_dist
+
+@cython.boundscheck(False)  # Deactivate bounds checking
+@cython.wraparound(False)   # Deactivate negative indexing.
+def count_distance_between(int up_node, int down_node, cnp.ndarray[cnp.int64_t, ndim=1] arr, cnp.int64_t[:] receivers, dict[int, float] dir_dist_dict):
+    """
+    Counts the distance between an upstream node and a downstream node, or next downstream sink node, in the flow network.
+    """
+    cdef double distance = 0
+    while up_node != down_node:
+        direction = arr[up_node]
+        distance += dir_dist_dict[direction]
+        up_node = receivers[up_node]
+        if direction == 0:
+            # if up_node != down_node:
+            #     print("Warning: reached a sink node before the downstream node!")
+            break
+    return distance
 
 @cython.boundscheck(False)  # Deactivate bounds checking
 @cython.wraparound(False)   # Deactivate negative indexing.
 def build_samplesite_graph(
     cnp.int64_t[:] receivers, 
-    cnp.ndarray[cnp.int64_t, ndim=1] baselevel_nodes, 
+    cnp.ndarray[cnp.int64_t, ndim=1] baselevel_nodes,
+    cnp.ndarray[cnp.int64_t, ndim=1] arr,
     dict[int, dict[str,object]] sample_dict,
+    cnp.float64_t dx,
+    cnp.float64_t dy,
     ):
     """
     Creates a map of subbasins, where each subbasin is assigned a unique ID from 0 (baselevel) to n (number of subbasins). 
@@ -332,8 +377,11 @@ def build_samplesite_graph(
         receivers: The receiver array (i.e., receiver[i] is the ID
         of the node that receives the flow from the i'th node).
         baselevel_nodes: The baselevel nodes to start from (i.e., sink-nodes).
+        arr: The D8 flow-direction array (flattened).
         sample_dict: A dictionary mapping sample site nodes to their metadata,
         where keys are node indices and metadata is a dictionary with keys "name", "x", and "y".
+        dx: The cell size in the x direction (float).
+        dy: The cell size in the y direction (float).
     """
     # Initialize variables
     cdef int nr = len(receivers)
@@ -346,6 +394,10 @@ def build_samplesite_graph(
     cdef cnp.int64_t my_current_label
     cdef NativeSampleNode parent
     cdef SampleData data
+    # Create a variable to contain the cell area which is product of dx and dy
+    cdef double cell_area = dx * dy
+    # Create a dictionary to map D8 directions to their distances to next node
+    cdef dict dir_to_dist = get_d8_dir_to_dist_dict(dx=dx, dy=dy)
     # Initialize the sample parent graph as a list of NativeSampleNode
     cdef list sample_parent_graph = []
     # Initialize a queue for breadth-first search
@@ -363,6 +415,7 @@ def build_samplesite_graph(
         node = q.front()
         q.pop()
 
+
         # Check if the node is a sample site
         if node in sample_dict:
             # Extract sample data from the sample_dict
@@ -371,16 +424,18 @@ def build_samplesite_graph(
             my_new_label = len(sample_parent_graph)
             my_current_label = labels[node]
             parent = sample_parent_graph[my_current_label]
+
+            distance = count_distance_between(up_node = node, down_node = parent.d8_node, arr = arr, receivers = receivers, dir_dist_dict = dir_to_dist)
             parent.upstream_nodes.append(data.name)  # Add the sample site name to the parent node's upstream nodes
             sample_parent_graph.append(
-                NativeSampleNode.make_w_downstream_and_sample(my_current_label, data)
+                NativeSampleNode.make_w_downstream_and_sample(my_current_label, data, node, distance)
             )  # Create a new sample node with the sample data
             # Update the label for the sample site node
             labels[node] = my_new_label  # Assign the new label to the sample site node
 
         # Get the label of the current node
         my_label = labels[node]
-        sample_parent_graph[my_label].area += 1  # Increment the area of the sample node
+        sample_parent_graph[my_label].area += cell_area  # Increment the area of the sample node by the cell area
 
         # Loop through the donors of the node and add them to the queue
         for n in range(delta[node], delta[node + 1]):
@@ -392,9 +447,9 @@ def build_samplesite_graph(
     # Calculate the total upstream areas for each sample node having built the sample parent graph
     calculate_total_upstream_areas(sample_parent_graph)
     # Check that the total upstream area of the root node is equal to the number of pixels
-    if sample_parent_graph[0].total_upstream_area != nr:
-        raise ValueError("Total upstream area of root node does not match the number of pixels in the flow direction array!")
-
+    if sample_parent_graph[0].total_upstream_area != len(receivers) * cell_area:
+        raise ValueError(f"Total upstream area of root node ({sample_parent_graph[0].total_upstream_area}) does not match" + \
+            f" the expected number from flow direction array ({len(receivers) * cell_area})!")
     # Loop through the sample parent graph to assign labels
     for i in range(len(sample_parent_graph)):
         # Assign the label to the sample parent node
