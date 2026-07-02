@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# fmt: off
 import logging
 import os
 import tempfile
@@ -292,24 +293,26 @@ class SampleNetworkUnmixer:
         Args:
             sample_network (nx.DiGraph): The sample network.
             use_regularization (bool): Flag indicating whether to use regularization.
-            rate_constants (Optional[RateConstantData]): The rate-constants for each reach/edge downstream of the site for the element. If not provided these are all set to 0 (i.e., conservative behaviour).
+            rate_constants (Optional[RateConstantData]): The rate-constants for each reach/edge downstream of the site for the element. If not provided these are all set to 0 (i.e., conservative behaviour). Unlike export rates, rate constants can be changed between solves without rebuilding the problem.
         """
 
         self.sample_network = sample_network
         self._site_to_observation: Dict[str, ReciprocalParameter] = {}
         self._site_to_export_rate: Dict[str, cp.Parameter] = {}
-        self._site_to_rate_constant: Dict[str, float] = {}
+        # Maps site name to (alpha_param, downstream_distance). alpha = exp(-k * d) is a
+        # DPP-compliant parameter updated at solve time, avoiding a rebuild when k changes.
+        self._site_to_alpha: Dict[str, Tuple[cp.Parameter, float]] = {}
         self._site_to_total_flux: Dict[str, ReciprocalParameter] = {}
         self._primary_terms: List[cp.Expression] = []
         self._regularizer_terms: List[cp.Expression] = []
         self._constraints: List[cp.Constraint] = []
         self._regularizer_strength = cp.Parameter(nonneg=True)
         self._problem: Optional[cp.Problem] = None
-        self._set_rate_constants(rate_constants)
         self._build_primary_terms()
         if use_regularization:
             self._build_regularizer_terms()
         self._build_problem()
+        self._set_rate_constant_parameters(rate_constants)
 
     def _calculate_normalised_areas(self, sample_network: nx.DiGraph) -> None:
         """
@@ -351,7 +354,6 @@ class SampleNetworkUnmixer:
             # Value is set at runtime
             my_data.my_export_rate = cp.Parameter(pos=True)
             self._site_to_export_rate[my_data.name] = my_data.my_export_rate
-            my_data.my_rate_constant = self._site_to_rate_constant[my_data.name]
             # Area weighted total contribution of material from this node
             my_data.my_flux = my_data.my_export_rate * my_data.rltv_area
 
@@ -394,14 +396,18 @@ class SampleNetworkUnmixer:
             self._primary_terms.append(misfit)
 
             if (ds := nx_get_downstream_data(self.sample_network, sample_name)) is not None:
-                # Get the distance between the nodes
                 ds_downstream = self.sample_network[sample_name][ds.name]["length"]
-                # Calculate the first order rate weighting for non conservative processes (assumed decay)
-                first_order_rate_weighting = np.exp(-my_data.my_rate_constant * ds_downstream)
-                # Add our flux to downstream node's
+                # alpha = exp(-k * d) is stored as a DPP-compliant parameter so rate
+                # constants can be updated at solve time without rebuilding the problem.
+                # We default to `k=0` which implies `alpha=1`
+                alpha_param = cp.Parameter(nonneg=True, value=1.0)
+                self._site_to_alpha[sample_name] = (alpha_param, ds_downstream)
                 ds.my_total_flux += my_data.my_total_flux
-                # Add our *tracer* flux to the downstream node's weighted by 1st order rate equation
-                ds.my_total_tracer_flux += my_data.my_total_tracer_flux * first_order_rate_weighting
+                # Accumulate total_tracer_flux_dummy (a pure Variable) * alpha_param into
+                # the downstream expression. Each alpha_param appears exactly once, so the
+                # constraint total_tracer_flux_dummy_ds == ... is DPP. No extra variable
+                # is needed, which preserves numerical accuracy for long chains.
+                ds.my_total_tracer_flux += total_tracer_flux_dummy * alpha_param
 
     def _build_regularizer_terms(self) -> None:
         """
@@ -477,29 +483,29 @@ class SampleNetworkUnmixer:
         for x in self._site_to_export_rate.values():
             assert x.value is not None
 
-    def _set_rate_constants(self, rate_constants: Optional[RateConstantData] = None) -> None:
+    def _set_rate_constant_parameters(
+        self, rate_constants: Optional[RateConstantData] = None
+    ) -> None:
         """
-        Set the rate constants according to input rate constants. The NetworkUnmixer must be reinitialised to change these.
+        Set the alpha = exp(-k * d) parameters for each non-leaf edge.
+
+        Unlike export rates, rate constants are fully DPP-compliant and can be changed
+        between solves without rebuilding the problem.
+
+        Args:
+            rate_constants: Per-site first-order decay constants k [L^-1]. Sites
+                omitted from the dict default to 0 (conservative behaviour).
         """
+        if rate_constants is None:
+            return
 
-        # Populate dictionary with the default rate constants initially
-        for data in nx_values(self.sample_network):
-            self._site_to_rate_constant[data.name] = data.my_rate_constant
+        for site in rate_constants:
+            if site not in self._site_to_observation:
+                raise Exception(f"Site '{site}' not found in network.")
 
-        # If rate_constants are provided, assign each one to a site, making sure that the site exists
-        if rate_constants:
-            for site, value in rate_constants.items():
-                assert site in self._site_to_rate_constant
-                self._site_to_rate_constant[site] = value
-
-        # Else, check that rate constant is set to default value of 0 (i.e., conservative behaviour)
-        else:
-            for x in self._site_to_rate_constant.values():
-                assert x == 0.0
-
-        # Ensure that all sites in the problem have a rate constant assigned
-        for x in self._site_to_rate_constant.values():
-            assert x is not None
+        for site, (alpha_param, ds_downstream) in self._site_to_alpha.items():
+            k = rate_constants.get(site, 0.0)
+            alpha_param.value = np.exp(-k * ds_downstream)
 
     def _set_total_flux_parameters(self) -> None:
         """
@@ -521,8 +527,10 @@ class SampleNetworkUnmixer:
         self,
         observation_data: ElementData,
         export_rates: Optional[ExportRateData] = None,
+        rate_constants: Optional[RateConstantData] = None,
         regularization_strength: Optional[float] = None,
         solver: str = "clarabel",
+        warm_start: bool = False,
     ) -> FunmixerSolution:
         """
         Solves the optimization problem.
@@ -534,8 +542,12 @@ class SampleNetworkUnmixer:
         Args:
             observation_data: The observed data for each element.
             export_rates: The export rates for each sub-catchment. If not provided these are all set to 1 (i.e., homogenous erosion/runoff).
+            rate_constants: Per-site first-order decay constants k [L^-1]. Can be changed between solves without rebuilding the problem. Defaults to 0 (conservative) for omitted sites.
             regularization_strength: The strength of the regularization term
             solver: The solver to use for solving the optimization problem (default is clarabel)
+            warm_start: If True, seed the solver from the previous solution. Beneficial when
+                consecutive problems are similar (e.g. Monte Carlo); can slow convergence when
+                problems differ substantially (e.g. large rate-constant sweeps).
 
         Returns:
             A tuple containing the downstream and upstream predictions. The downstream and upstream predictions
@@ -554,6 +566,7 @@ class SampleNetworkUnmixer:
 
         self._set_observation_parameters(observation_data=observation_data)
         self._set_export_rate_parameters(export_rates=export_rates)
+        self._set_rate_constant_parameters(rate_constants=rate_constants)
         self._set_total_flux_parameters()
 
         if self._regularizer_terms and not regularization_strength:
@@ -568,7 +581,7 @@ class SampleNetworkUnmixer:
         assert (problem := self._problem) is not None
         logger.info("Solving problem...")
         start_solve_time = time.time()
-        objective_value = problem.solve(**SOLVERS[solver])
+        objective_value = problem.solve(**SOLVERS[solver], warm_start=warm_start)
         end_solve_time = time.time()
 
         if problem.status == "optimal":
@@ -606,8 +619,10 @@ class SampleNetworkUnmixer:
         relative_error: float,
         num_repeats: int,
         export_rates: Optional[ExportRateData] = None,
+        rate_constants: Optional[RateConstantData] = None,
         regularization_strength: Optional[float] = None,
         solver: str = "clarabel",
+        warm_start: bool = True,
     ) -> Tuple[DefaultDict[str, List[float]], Dict[str, List[float]]]:
         """
         Solves the optimization problem using Monte Carlo simulation.
@@ -621,9 +636,11 @@ class SampleNetworkUnmixer:
             relative_error: The *relative* error as a percentage to use for resampling the observation data.
             num_repeats: The number of times to repeat the Monte Carlo simulation.
             export_rates: The export rates for each element. If not provided these are all set to 1.
-            rate_constants: The rate-constants for each reach/edge downstream of the site for the element. If not provided these are all set to 0 (i.e., conservative behaviour).
+            rate_constants: Per-site first-order decay constants k [L^-1]. Defaults to 0 (conservative) for omitted sites.
             regularization_strength: The strength of the regularization term (default: None).
             solver: The solver to use for solving the optimization problem (default: "clarabel").
+            warm_start: If True, seed each solve from the previous solution (default: True). Small
+                observation perturbations between iterations make this almost always beneficial here.
 
         Returns:
                 A tuple containing the Monte Carlo simulation results.
@@ -655,7 +672,9 @@ class SampleNetworkUnmixer:
                 solver=solver,
                 regularization_strength=regularization_strength,
                 export_rates=export_rates,
-            )  # Solve problem
+                rate_constants=rate_constants,
+                warm_start=warm_start,
+            )
             for sample_name, v in solution.downstream_preds.items():
                 predictions_down_mc[sample_name].append(v)
 
@@ -780,7 +799,7 @@ def forward_model(
 
         # If provided, set rate constants from user input
         # else default to zero (i.e., conservative behaviour)
-        my_data.my_rate_constant = rate_constants[sample_name] if rate_constants else 0.0
+        my_data.my_rate_constant = (rate_constants[sample_name] if rate_constants else 0.0)
 
         # pyre-fixme[8]: Attribute has type `Optional[Expression]`; used as `float`.
         my_data.my_tracer_value = upstream_concentrations[sample_name]
