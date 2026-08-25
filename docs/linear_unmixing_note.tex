@@ -1,0 +1,865 @@
+\documentclass[11pt]{article}
+
+\usepackage{preprint}
+
+%% Math packages
+\usepackage{amsmath, amsthm, amssymb, amsfonts}
+\usepackage{bm}
+\usepackage{mathtools}
+
+\usepackage[style=authoryear-comp,maxcitenames=2,uniquename=false,giveninits=true,uniquelist=false,maxbibnames=99,sortcites=true,sorting=nyt,doi=true,isbn=false,url=false,hyperref=true,date=year]{biblatex}
+\renewbibmacro{in:}{%
+  \ifboolexpr{test {\ifentrytype{article}} or test {\ifentrytype{inproceedings}}}{}%
+  {\printtext{\bibstring{in}\intitlepunct}}%
+}
+\AtEveryBibitem{\clearlist{language}\clearfield{note}\clearfield{abstract}}
+\addbibresource{linear_unmixing_note.bib}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{xcolor}
+\usepackage[colorlinks=true, linkcolor=magenta, urlcolor=blue, citecolor=cyan, anchorcolor=black]{hyperref}
+\usepackage{booktabs}
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{xspace}
+\usepackage{titlesec}
+\titlespacing\section{0pt}{12pt plus 3pt minus 3pt}{1pt plus 1pt minus 1pt}
+\titlespacing\subsection{0pt}{10pt plus 3pt minus 3pt}{1pt plus 1pt minus 1pt}
+
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta}
+
+%% preprint.sty hardcodes the parent paper's title in the running header.
+\lhead{\scshape Note -- Linear least-squares unmixing on a sample network}
+
+%% Notation, following the parent preprint
+\newcommand{\cvec}{\ensuremath{\mathbf{c}}\xspace}
+\newcommand{\dvec}{\ensuremath{\mathbf{d}}\xspace}
+\newcommand{\qvec}{\ensuremath{\mathbf{q}}\xspace}
+\newcommand{\Mmat}{\ensuremath{\mathbf{M}}\xspace}
+\newcommand{\Rmat}{\ensuremath{\mathbf{R}}\xspace}
+\newcommand{\Pmat}{\ensuremath{\mathbf{P}}\xspace}
+\newcommand{\Amat}{\ensuremath{\mathbf{A}}\xspace}
+\newcommand{\Wmat}{\ensuremath{\mathbf{W}}\xspace}
+\newcommand{\Imat}{\ensuremath{\mathbf{I}}\xspace}
+\newcommand{\onevec}{\ensuremath{\mathbf{1}}\xspace}
+\newcommand{\Cd}{\ensuremath{\mathbf{C}_{\mathbf{d}}}\xspace}
+\newcommand{\Cc}{\ensuremath{\mathbf{C}_{\mathbf{c}}}\xspace}
+\newcommand{\Cdhat}{\ensuremath{\mathbf{C}_{\hat{\mathbf{d}}}}\xspace}
+\newcommand{\Reals}{\ensuremath{\mathbb{R}}\xspace}
+\newcommand{\Expect}{\ensuremath{\mathbb{E}}\xspace}
+\newcommand{\transpose}{\ensuremath{^{\mathsf{T}}}}
+
+\DeclareMathOperator*{\argmin}{arg\,min}
+
+\newtheorem{theorem}{Proposition}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\theoremstyle{definition}
+\newtheorem{remark}[theorem]{Remark}
+
+\title{Linear least-squares unmixing on a sample network:\\derivation, regularization, and error propagation}
+
+\usepackage{authblk}
+\renewcommand*{\Authfont}{\bfseries}
+\author[1]{Alex G. Lipp}
+\affil[1]{Merton College, University of Oxford}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+\textcite{barnes_using_2024} recover source concentrations on a river sample network by
+convex optimization, penalising \textit{relative} differences between predicted and observed
+concentrations. Their Appendix~A observes that penalising \textit{absolute} differences
+instead reduces the problem to a linear least-squares matrix inversion. This note works that
+observation out in full. We show that the mixing matrix $\Mmat$ is square, row-stochastic and
+triangular, hence always invertible, and we give its inverse in closed form as a local
+differencing stencil on the network. We then extend the formulation in three directions that
+the appendix does not cover: first-order tracer decay, weighting by the data covariance
+(generalised least squares), and Tikhonov regularization of the model variance. We prove that
+the regularized problem has a unique solution for every regularization strength, derive the
+resulting linear estimator, and obtain closed-form covariances for both the recovered sources
+and the modelled observations. We distinguish carefully between the propagated covariance and
+the Bayesian posterior covariance, which coincide only when the problem is unregularized, and
+give the exact identity relating them. Everything is derived from first principles so that it
+can be checked line by line.
+\end{abstract}
+
+\vspace{3mm}
+
+\section{Scope and notation}
+
+We adopt the notation of \textcite{barnes_using_2024} throughout. The sample network is a
+directed acyclic graph $G = (N, E)$ whose $n$ nodes are sample sites and whose edges point
+\textit{downstream}. Each node $i$ carries:
+
+\begin{itemize}
+  \item $a_i$ [L$^2$], the area of the sub-basin uniquely defined by sample site $i$;
+  \item $\phi_i$ [M\,L$^{-2}$\,T$^{-1}$], the material export rate of that sub-basin;
+  \item $q_i = a_i \phi_i > 0$ [M\,T$^{-1}$], the material flux the sub-basin generates;
+  \item $c_i$, the source concentration of the tracer in material exported by sub-basin $i$
+        --- the unknown;
+  \item $d_i$, the concentration observed at the sample site --- the datum.
+\end{itemize}
+
+\noindent Write $U_i \subseteq N$ for the set of nodes upstream of $i$ \textit{including $i$
+itself}, and $A(i)$ for the set of immediate upstream neighbours of $i$ (its predecessors in
+$G$). We make one structural assumption throughout, which the D8 flow model guarantees:
+
+\begin{quote}
+\textbf{(A1)} Every node has at most one downstream neighbour, so $G$ is a forest of
+in-trees.
+\end{quote}
+
+\noindent Assumption (A1) is what makes the sets $\{U_p\}_{p \in A(i)}$ pairwise disjoint,
+which we use in Proposition~\ref{prop:inverse}. It does not require the network to be
+connected: disjoint river basins may be solved together, exactly as in the parent study.
+
+Two derived quantities recur. The \textbf{total flux} passing site $i$ is
+\begin{equation}
+  Q_i \;=\; \sum_{j \in U_i} q_j ,
+  \label{eq:Q}
+\end{equation}
+and, for $j \in U_i$, the \textbf{path attenuation} from $j$ to $i$ is
+\begin{equation}
+  \alpha_{j \to i} \;=\; \prod_{e \in \mathrm{path}(j \to i)} \exp\!\left( -k_{e} L_{e} \right),
+  \label{eq:alpha}
+\end{equation}
+the product over edges of the unique path from $j$ to $i$, where $L_e$ is the flow-path length
+of edge $e$ and $k_e$ the first-order decay constant applied along it. By (A1) that path is
+unique, so \eqref{eq:alpha} is well defined, and $\alpha_{i \to i} = 1$ (empty product). A
+\textbf{conservative} tracer has $k_e = 0$ for all $e$, hence $\alpha_{j \to i} = 1$
+throughout; this is the case treated in Appendix~A of the parent paper.
+
+\section{The forward model as a matrix}
+
+\subsection{Assembling \texorpdfstring{$\Mmat$}{M}}
+
+Conservation of tracer at steady state gives the observation at site $i$ as a flux-weighted
+mixture of every source upstream of it, attenuated by decay along the way:
+\begin{equation}
+  d_i \;=\; \frac{\displaystyle\sum_{j \in U_i} \alpha_{j \to i}\, q_j\, c_j}
+                 {\displaystyle\sum_{j \in U_i} q_j}
+        \;=\; \frac{1}{Q_i} \sum_{j \in U_i} \alpha_{j \to i}\, q_j\, c_j .
+  \label{eq:forward}
+\end{equation}
+
+\noindent Note that decay enters the numerator only. Tracer is lost in transit, but the
+\textit{carrier} --- the water or sediment --- is not, so the denominator is the undecayed
+total flux $Q_i$. Setting every $\alpha = 1$ recovers Equation~3 of \textcite{barnes_using_2024}.
+
+Following the parent appendix, define the $0$--$1$ matrix $\bm{\Theta}$ by $\Theta_{ij} = 1$
+if and only if $j \in U_i$; that is, $\bm{\Theta}$ is the path matrix of $G$ with a self-loop
+added at every node. Equation~\eqref{eq:forward} is then linear in \cvec, with
+\begin{equation}
+  \boxed{\;
+  M_{ij} \;=\; \frac{\Theta_{ij}\, \alpha_{j \to i}\, q_j}
+                    {\sum_{k=1}^{n} \Theta_{ik}\, q_k}
+             \;=\; \frac{\Theta_{ij}\, \alpha_{j \to i}\, q_j}{Q_i} ,
+  \qquad \dvec = \Mmat \cvec .
+  \;}
+  \label{eq:M}
+\end{equation}
+
+\noindent For a conservative tracer this is exactly Equation~11 of the parent appendix.
+
+\subsection{Structure of \texorpdfstring{$\Mmat$}{M}}
+
+$\Mmat$ is $n \times n$: the sample network defines exactly one sub-basin per sample site, so
+there are as many unknowns as data. This squareness is the pivot on which everything below
+turns, and it is worth stating plainly that it is a modelling choice, not a coincidence --- it
+is what it means to attribute one source concentration to each sampled sub-basin.
+
+\begin{lemma}[Row sums]\label{lem:stochastic}
+Every row of $\Mmat$ is non-negative with $\sum_j M_{ij} \le 1$, with equality for all $i$ if
+and only if the tracer is conservative.
+\end{lemma}
+
+\begin{proof}
+Non-negativity is immediate from \eqref{eq:M} since $q_j > 0$, $\alpha > 0$, $\Theta \in
+\{0,1\}$. For the sum,
+\[
+  \sum_{j=1}^n M_{ij}
+  = \frac{1}{Q_i}\sum_{j \in U_i} \alpha_{j\to i}\, q_j
+  \;\le\; \frac{1}{Q_i} \sum_{j \in U_i} q_j
+  \;=\; \frac{Q_i}{Q_i} = 1 ,
+\]
+using $\alpha_{j \to i} \le 1$, which holds because every $k_e L_e \ge 0$. Equality for a
+given $i$ requires $\alpha_{j \to i} = 1$ for all $j \in U_i$, i.e.\ no decay anywhere
+upstream of $i$; equality for all $i$ requires it everywhere.
+\end{proof}
+
+\noindent For a conservative tracer, then, $\Mmat$ is \textbf{row-stochastic}: each observation
+is a convex combination of the sources upstream of it. This is the formal statement of ``a
+river sample is a mixture of its upstream sources'', and it has a useful consequence,
+$\Mmat \onevec = \onevec$, which we use in Section~\ref{sec:limits}.
+
+\begin{lemma}[Triangularity]\label{lem:triangular}
+Let $\sigma$ be any topological ordering of $G$, so that $\sigma(u) < \sigma(v)$ whenever
+$(u,v) \in E$. Permuting rows and columns of $\Mmat$ by $\sigma$ makes it lower triangular,
+with diagonal entries
+\begin{equation}
+  M_{ii} \;=\; \frac{q_i}{Q_i} \;\in\; (0, 1] .
+  \label{eq:diagonal}
+\end{equation}
+\end{lemma}
+
+\begin{proof}
+$M_{ij} \ne 0$ requires $\Theta_{ij} = 1$, i.e.\ $j \in U_i$. If $j \ne i$ then a directed
+path runs from $j$ to $i$, so $\sigma(j) < \sigma(i)$. Hence $M_{ij} \ne 0 \Rightarrow
+\sigma(j) \le \sigma(i)$, which is lower triangularity in the permuted ordering. The diagonal
+follows from \eqref{eq:M} with $j = i$, using $\Theta_{ii} = 1$ and $\alpha_{i \to i} = 1$; it
+is positive because $q_i > 0$, and at most $1$ because $q_i \le Q_i$, with $M_{ii} = 1$ exactly
+when $i$ is a leaf (headwater) node.
+\end{proof}
+
+\begin{theorem}[Invertibility]\label{prop:invertible}
+$\Mmat$ is invertible, with
+\begin{equation}
+  \left| \det \Mmat \right| \;=\; \prod_{i=1}^{n} \frac{q_i}{Q_i} \;>\; 0 .
+\end{equation}
+\end{theorem}
+
+\begin{proof}
+Let $\bm{\Pi}$ be the permutation matrix of the topological order $\sigma$. By
+Lemma~\ref{lem:triangular}, $\bm{\Pi}\Mmat\bm{\Pi}\transpose$ is lower triangular, so its
+determinant is the product of its diagonal entries, $\prod_i q_i / Q_i$, which is strictly
+positive because every $q_i > 0$ and every $Q_i < \infty$. Since $|\det \bm{\Pi}| = 1$,
+$|\det \Mmat| = \prod_i q_i/Q_i > 0$, and a matrix with non-zero determinant is invertible.
+\end{proof}
+
+\begin{remark}
+Invertibility is unaffected by decay: $\alpha$ appears only off the diagonal, so
+\eqref{eq:diagonal} is untouched. It is also unaffected by the export rates $\phi$, provided
+they are strictly positive. It \textit{would} fail if some sub-basin had zero area or zero
+export rate, i.e.\ if two sample sites were co-located --- then $q_i = 0$, the corresponding
+source is not identifiable, and the model is degenerate. This is worth checking in practice.
+\end{remark}
+
+\section{The inverse in closed form}
+\label{sec:inverse}
+
+Proposition~\ref{prop:invertible} says $\cvec = \Mmat^{-1}\dvec$ exists and is unique. We now show
+it need never be computed by matrix inversion: it is a local differencing stencil on the
+network, computable in one sweep.
+
+It is convenient to work with the \textbf{tracer flux} passing site $i$,
+\begin{equation}
+  T_i \;=\; Q_i d_i \;=\; \sum_{j \in U_i} \alpha_{j \to i}\, q_j\, c_j ,
+  \label{eq:T}
+\end{equation}
+which is just \eqref{eq:forward} cleared of its denominator. $T_i$ has units of tracer mass per
+time: it is the amount of tracer passing the sample site per unit time.
+
+\begin{theorem}[Closed-form inverse]\label{prop:inverse}
+For every node $i$,
+\begin{equation}
+  \boxed{\;
+  c_i \;=\; \frac{1}{q_i}\left( Q_i d_i \;-\; \sum_{p \in A(i)} \alpha_{p \to i}\, Q_p d_p \right) .
+  \;}
+  \label{eq:closedform}
+\end{equation}
+\end{theorem}
+
+\begin{proof}
+Every node in $U_i$ other than $i$ lies upstream of exactly one immediate neighbour $p \in
+A(i)$, and by (A1) the sets $U_p$ for distinct $p \in A(i)$ are pairwise disjoint. Hence
+\[
+  U_i \;=\; \{i\} \;\sqcup\; \bigsqcup_{p \in A(i)} U_p ,
+\]
+a disjoint union. Now fix $p \in A(i)$ and $j \in U_p$. The unique path $j \to i$ is the path
+$j \to p$ followed by the single edge $p \to i$, so the attenuation factorises:
+\begin{equation}
+  \alpha_{j \to i} \;=\; \alpha_{j \to p}\;\alpha_{p \to i} .
+  \label{eq:factorise}
+\end{equation}
+Substituting the partition and \eqref{eq:factorise} into \eqref{eq:T}, and using
+$\alpha_{i \to i} = 1$ for the $j = i$ term,
+\begin{align}
+  T_i
+  &= q_i c_i \;+\; \sum_{p \in A(i)} \; \sum_{j \in U_p} \alpha_{j \to i}\, q_j c_j \nonumber\\
+  &= q_i c_i \;+\; \sum_{p \in A(i)} \alpha_{p \to i} \underbrace{\sum_{j \in U_p} \alpha_{j \to p}\, q_j c_j}_{= \,T_p} \nonumber\\
+  &= q_i c_i \;+\; \sum_{p \in A(i)} \alpha_{p \to i}\, T_p .
+  \label{eq:balance}
+\end{align}
+Equation~\eqref{eq:balance} is a statement of tracer conservation at node $i$: the tracer
+leaving equals the tracer generated locally plus the (attenuated) tracer delivered by the
+immediate tributaries. Solving for $c_i$ and substituting $T = Qd$ gives
+\eqref{eq:closedform}. Since $q_i > 0$ the division is legitimate.
+\end{proof}
+
+\begin{corollary}[Sparsity of $\Mmat^{-1}$]
+\begin{equation}
+  \left(\Mmat^{-1}\right)_{ij} =
+  \begin{dcases}
+    \dfrac{Q_i}{q_i}, & j = i, \\[6pt]
+    -\dfrac{\alpha_{j \to i}\, Q_j}{q_i}, & j \in A(i), \\[6pt]
+    0, & \text{otherwise.}
+  \end{dcases}
+  \label{eq:Minv}
+\end{equation}
+$\Mmat^{-1}$ therefore has at most $n + |E| \le 2n - 1$ non-zero entries, against up to
+$n(n+1)/2$ in $\Mmat$ itself. Equation~\eqref{eq:closedform} evaluates in $O(n + |E|)$ time.
+\end{corollary}
+
+\noindent It is worth pausing on how much structure this reveals. $\Mmat$ is dense and global
+--- every downstream observation depends on every source above it --- yet its inverse is
+sparse and purely local. Recovering a source concentration requires only the observation at
+that site and the observations at its immediate tributaries. All the long-range mixing cancels.
+
+\begin{corollary}[Worked example]
+For the six-node network of \textcite[Figure~2]{barnes_using_2024}, with $A(4) = \{1,2\}$,
+$A(5) = \{3\}$, $A(6) = \{4,5\}$ and no decay, Equation~\eqref{eq:closedform} gives
+\begin{align*}
+  c_1 &= d_1, \qquad c_2 = d_2, \qquad c_3 = d_3, \\
+  c_4 &= \frac{Q_4 d_4 - Q_1 d_1 - Q_2 d_2}{q_4}, \\
+  c_5 &= \frac{Q_5 d_5 - Q_3 d_3}{q_5}, \\
+  c_6 &= \frac{Q_6 d_6 - Q_4 d_4 - Q_5 d_5}{q_6},
+\end{align*}
+with $Q_1 = q_1$, $Q_2 = q_2$, $Q_3 = q_3$, $Q_4 = q_1 + q_2 + q_4$, $Q_5 = q_3 + q_5$ and
+$Q_6 = \sum_{i=1}^{6} q_i$. Headwater sites are recovered exactly and trivially; interior sites
+are recovered by differencing.
+\end{corollary}
+
+\subsection{Noise amplification}
+\label{sec:amplification}
+
+Differencing is the source of all the difficulty. Suppose the observations carry independent
+errors of standard deviation $\sigma_i$. Propagating them through \eqref{eq:closedform}
+(anticipating Section~\ref{sec:propagation}, and using independence),
+\begin{equation}
+  \operatorname{Var}(c_i)
+  = \frac{Q_i^2 \sigma_i^2 + \sum_{p \in A(i)} \alpha_{p\to i}^2 Q_p^2 \sigma_p^2}{q_i^2} .
+  \label{eq:varc}
+\end{equation}
+Every term is scaled by $q_i^{-2}$. Define the \textbf{amplification factor}
+\begin{equation}
+  \kappa_i \;=\; \frac{Q_i}{q_i} \;=\; \frac{1}{M_{ii}} \;\ge\; 1 ,
+  \label{eq:kappa}
+\end{equation}
+the ratio of the total flux passing site $i$ to the flux its own sub-basin generates. If
+site $i$ sits immediately downstream of another site, with little incremental drainage area
+between them, then $q_i \ll Q_i$, $\kappa_i$ is large, and \eqref{eq:closedform} subtracts two
+nearly equal large numbers to obtain a small one. This is catastrophic cancellation, and it is
+an intrinsic property of the sampling design, not of the algorithm: the data simply do not
+constrain that sub-basin well. In practice $\kappa_i$, being free to compute, is the single
+most useful diagnostic of whether a linear inversion is worth attempting on a given network.
+
+\begin{corollary}[When positivity binds]\label{cor:positivity}
+Since concentrations must be non-negative, the unregularized solution is physically admissible
+at node $i$ if and only if
+\begin{equation}
+  Q_i d_i \;\ge\; \sum_{p \in A(i)} \alpha_{p \to i} \, Q_p d_p ,
+  \label{eq:positivity}
+\end{equation}
+that is, if and only if at least as much tracer flux leaves site $i$ as its tributaries deliver
+to it. A violation is a direct falsification of the forward model \eqref{eq:forward} by the
+data, whether through measurement error, non-conservative behaviour, or mis-specified fluxes.
+\end{corollary}
+
+\section{Why the unregularized problem is degenerate}
+\label{sec:degenerate}
+
+Appendix~A of \textcite{barnes_using_2024} poses the recovery as a constrained least-squares
+problem,
+\begin{equation}
+  \underset{\cvec \in \Reals^n}{\text{minimize}} \;\; \lVert \Mmat\cvec - \dvec \rVert_2
+  \qquad \text{subject to} \quad c_i \ge 0 .
+  \label{eq:appendixproblem}
+\end{equation}
+Proposition~\ref{prop:invertible} shows that, absent the constraint, this is not really a
+least-squares problem at all.
+
+\begin{theorem}[Degeneracy]\label{prop:degenerate}
+Let $\Wmat$ be any symmetric positive definite weight matrix. Then
+\begin{equation}
+  \argmin_{\cvec \in \Reals^n} \; (\Mmat\cvec - \dvec)\transpose \Wmat (\Mmat\cvec - \dvec)
+  \;=\; \Mmat^{-1}\dvec ,
+\end{equation}
+independently of $\Wmat$, and the residual at the optimum is exactly zero.
+\end{theorem}
+
+\begin{proof}
+The objective is non-negative for every \cvec, and $\cvec = \Mmat^{-1}\dvec$ --- which exists
+by Proposition~\ref{prop:invertible} --- attains the value $0$. Hence it is a global minimiser, and
+it is the unique one because $\Wmat \succ 0$ forces the residual to vanish, and $\Mmat$ is
+injective. Algebraically, the generalised least-squares estimator collapses:
+\[
+  (\Mmat\transpose\Wmat\Mmat)^{-1}\Mmat\transpose\Wmat
+  = \Mmat^{-1}\Wmat^{-1}\Mmat^{-\mathsf{T}}\Mmat\transpose\Wmat
+  = \Mmat^{-1} . \qedhere
+\]
+\end{proof}
+
+\noindent Three consequences follow, and they set up the rest of this note.
+
+\begin{enumerate}
+  \item \textbf{Weighting is inert when $\lambda = 0$.} No choice of $\Wmat$ --- including
+        $\Wmat = \Cd^{-1}$, the statistically correct one --- changes the answer. There is
+        nothing to trade off when the model can fit every datum exactly. Weighting only
+        becomes consequential once a competing term is added to the objective
+        (Section~\ref{sec:regularization}).
+  \item \textbf{The problem interpolates the noise.} A zero residual means the estimate
+        reproduces the observations exactly, errors included. Combined with the amplification
+        of Section~\ref{sec:amplification}, this is why the raw inversion is unusable on
+        realistic data.
+  \item \textbf{The constraint is the only thing that can bite.} By
+        Corollary~\ref{cor:positivity}, \eqref{eq:appendixproblem} departs from
+        $\Mmat^{-1}\dvec$ precisely when \eqref{eq:positivity} fails somewhere.
+\end{enumerate}
+
+\begin{remark}[Bounds]
+The parent appendix writes the constraint as $0 < c_i < 1$, appropriate for a tracer measured
+as a mass fraction. Two remarks. First, a strict inequality cannot be imposed in a convex
+program --- the feasible set would not be closed and the infimum need not be attained --- so
+one uses $c_i \ge 0$. Second, the upper bound is unit-dependent ($1$ for a fraction, $10^6$ for
+mg\,kg$^{-1}$) whereas the lower bound is not. Since $\Mmat$ is row-substochastic, an estimate
+exceeding the physical ceiling indicates that the model has already failed, and is more useful
+surfaced as a diagnostic than silently clipped. Below we impose $c_i \ge 0$ only.
+\end{remark}
+
+\section{Scale invariance and normalisation}
+\label{sec:scale}
+
+\begin{theorem}[Homogeneity]\label{prop:homogeneity}
+The unregularized solution map $\dvec \mapsto \cvec$ is homogeneous of degree one:
+$\cvec(t\dvec) = t\,\cvec(\dvec)$ for any $t > 0$. Moreover $\Mmat$ is invariant under a common
+rescaling of the fluxes, $q_j \mapsto sq_j$.
+\end{theorem}
+
+\begin{proof}
+The first claim is immediate from linearity, $\cvec = \Mmat^{-1}\dvec$. For the second,
+replacing $q_j$ by $sq_j$ in \eqref{eq:M} multiplies numerator and denominator by $s$.
+\end{proof}
+
+\noindent Homogeneity licenses the mean normalisation used in the implementation. Writing
+$\bar{d} = n^{-1}\sum_i d_i$ and solving with $\tilde{\dvec} = \dvec / \bar{d}$, the recovered
+sources are $\cvec = \bar{d}\,\tilde{\cvec}$ exactly. This changes nothing mathematically; its
+purpose is numerical, keeping all quantities near unity so that solver tolerances --- which are
+partly absolute --- behave uniformly across tracers whose concentrations may differ by many
+orders of magnitude. It has the further benefit of rendering the regularization strength
+introduced below dimensionless, and hence transferable between tracers and datasets.
+
+An identical argument applies to the sub-basin areas, which the implementation divides by their
+mean, and to covariances, which by Proposition~\ref{prop:homogeneity} and
+Section~\ref{sec:propagation} scale as $\bar{d}^{\,2}$ and so may equivalently be computed in
+the original units.
+
+\section{Weighting by the data covariance}
+\label{sec:weighting}
+
+Let $\Cd \succ 0$ be the covariance of the observation errors. The statistically natural misfit
+is the Mahalanobis norm of the residual, giving generalised least squares
+\parencite{menke_geophysical_2012, aster_parameter_2018}:
+\begin{equation}
+  \Phi(\cvec) \;=\; (\Mmat\cvec - \dvec)\transpose \Cd^{-1} (\Mmat\cvec - \dvec) .
+  \label{eq:gls}
+\end{equation}
+Numerically one never forms $\Cd^{-1}$. Take the Cholesky factorisation $\Cd = \mathbf{L}
+\mathbf{L}\transpose$ \parencite{golub_matrix_2013} and define the whitened system
+\begin{equation}
+  \widetilde{\Mmat} = \mathbf{L}^{-1}\Mmat, \qquad
+  \tilde{\dvec} = \mathbf{L}^{-1}\dvec ,
+  \label{eq:whitening}
+\end{equation}
+so that $\Phi(\cvec) = \lVert \widetilde{\Mmat}\cvec - \tilde{\dvec}\rVert_2^2$: generalised
+least squares becomes ordinary least squares on the whitened system, whose residuals have
+identity covariance. When $\Cd$ is diagonal this reduces to dividing row $i$ of $\Mmat$ and
+$d_i$ by $\sigma_i$.
+
+\begin{remark}[Relation to the log-ratio objective]
+\label{rem:logratio}
+Suppose errors are proportional, $\sigma_i = f d_i$ for a constant relative error $f$ --- the
+standard model for geochemical assay. The $i$th whitened residual is then
+\begin{equation}
+  \frac{(\Mmat\cvec - \dvec)_i}{f d_i}
+  \;=\; \frac{1}{f}\left( \frac{(\Mmat\cvec)_i}{d_i} - 1 \right) ,
+\end{equation}
+which depends on the data only through the \textit{ratio} of predicted to observed
+concentration. The weighted linear objective is therefore, like the log-ratio objective of the
+parent study, a relative misfit; it is the unweighted objective that is not. This is precisely
+the objection \textcite{barnes_using_2024} raise against Euclidean misfit --- that it
+over-weights high concentrations --- and weighting by a proportional error model answers it.
+The two remain distinct: \eqref{eq:gls} penalises the squared relative residual, whereas
+$\max(x, 1/x)$ with $x = d_{\text{pred}}/d_{\text{obs}}$ behaves like $1 + |x - 1|$ near
+$x = 1$. Both are functions of the relative residual alone, but one is quadratic and the other
+piecewise linear in it, so they weight outliers differently and do not coincide.
+\end{remark}
+
+\section{Regularization}
+\label{sec:regularization}
+
+Section~\ref{sec:degenerate} showed that the unregularized problem interpolates the noise. The
+remedy is Tikhonov regularization \parencite{tikhonov_solution_1963, hoerl_ridge_1970,
+hansen_rank-deficient_1998}: add a penalty expressing a preference among models.
+
+We penalise the \textbf{variance of the model about its own mean}. Let
+\begin{equation}
+  \Pmat \;=\; \Imat - \tfrac{1}{n}\onevec\onevec\transpose
+  \label{eq:P}
+\end{equation}
+be the centering projector, so that $(\Pmat\cvec)_i = c_i - \bar{c}$. The full problem is
+\begin{equation}
+  \boxed{\;
+  \begin{aligned}
+    \underset{\cvec \in \Reals^n}{\text{minimize}} \quad
+      & J(\cvec) = (\Mmat\cvec - \dvec)\transpose \Cd^{-1}(\Mmat\cvec - \dvec)
+        + \lambda \lVert \Pmat\cvec \rVert_2^2 \\
+    \text{subject to} \quad & \cvec \ge 0 .
+  \end{aligned}
+  \;}
+  \label{eq:problem}
+\end{equation}
+
+\noindent Note that this penalises departure from the mean of the \textit{model}, not, as in
+the parent study, from the mean of the \textit{observations}. That substitution was forced
+there by the requirement that the objective be expressible in disciplined convex form
+\parencite{boyd_convex_2004, diamond_cvxpy_2016}; the linear formulation is under no such
+constraint and can use the more natural quantity.
+
+\begin{lemma}[Properties of $\Pmat$]\label{lem:P}
+$\Pmat$ is symmetric and idempotent, hence an orthogonal projector; it is positive
+semi-definite with eigenvalue $0$ on $\operatorname{span}\{\onevec\}$ and eigenvalue $1$ on its
+orthogonal complement; and
+\begin{equation}
+  \lVert \Pmat \cvec \rVert_2^2 = \cvec\transpose \Pmat\transpose \Pmat \cvec
+  = \cvec\transpose \Pmat \cvec = \sum_{i=1}^n (c_i - \bar{c})^2 .
+\end{equation}
+\end{lemma}
+
+\begin{proof}
+Symmetry is clear. For idempotency, using $\onevec\transpose\onevec = n$,
+\[
+  \Pmat^2 = \Imat - \tfrac{2}{n}\onevec\onevec\transpose
+          + \tfrac{1}{n^2}\onevec(\onevec\transpose\onevec)\onevec\transpose
+          = \Imat - \tfrac{1}{n}\onevec\onevec\transpose = \Pmat .
+\]
+Then $\Pmat\transpose\Pmat = \Pmat^2 = \Pmat$, giving the quadratic form. $\Pmat\onevec =
+\onevec - \onevec = \bm{0}$, and for $\mathbf{v} \perp \onevec$, $\Pmat\mathbf{v} =
+\mathbf{v}$. Eigenvalues in $\{0,1\}$ give $\Pmat \succeq 0$.
+\end{proof}
+
+\noindent $\Pmat$ is thus singular, with a one-dimensional null space. This matters: the
+penalty alone does not determine a unique solution, and the classical uniqueness condition for
+general-form Tikhonov regularization \parencite{elden_algorithms_1977,
+hansen_rank-deficient_1998} requires
+$\mathcal{N}(\Mmat) \cap \mathcal{N}(\Pmat) = \{\bm{0}\}$. Here $\mathcal{N}(\Mmat) =
+\{\bm{0}\}$ by Proposition~\ref{prop:invertible}, so the condition holds trivially --- but it holds
+\textit{because of} the structure of $\Mmat$, not because of the penalty.
+
+\begin{theorem}[Existence and uniqueness]\label{prop:unique}
+For every $\lambda \ge 0$, $J$ is strictly convex on $\Reals^n$. Consequently
+\eqref{eq:problem} has a unique global minimiser, both unconstrained and subject to
+$\cvec \ge 0$.
+\end{theorem}
+
+\begin{proof}
+$J$ is a sum of quadratic forms, with gradient and Hessian
+\begin{align}
+  \nabla J(\cvec) &= 2\Mmat\transpose\Cd^{-1}(\Mmat\cvec - \dvec) + 2\lambda\Pmat\cvec ,
+  \label{eq:grad}\\
+  \nabla^2 J &= 2\left(\Mmat\transpose\Cd^{-1}\Mmat + \lambda\Pmat\right) .
+  \label{eq:hess}
+\end{align}
+For any $\mathbf{v} \ne \bm{0}$, $\mathbf{v}\transpose\Mmat\transpose\Cd^{-1}\Mmat\mathbf{v} =
+(\Mmat\mathbf{v})\transpose\Cd^{-1}(\Mmat\mathbf{v}) > 0$, since $\Mmat\mathbf{v} \ne \bm{0}$
+by Proposition~\ref{prop:invertible} and $\Cd^{-1} \succ 0$. Hence
+$\Mmat\transpose\Cd^{-1}\Mmat \succ 0$. By Lemma~\ref{lem:P}, $\lambda\Pmat \succeq 0$ for
+$\lambda \ge 0$. A positive definite matrix plus a positive semi-definite one is positive
+definite \parencite{horn_matrix_2012}, so $\nabla^2 J \succ 0$ and $J$ is strictly convex. A
+strictly convex function has at most one minimiser on any convex set, and coercivity
+(guaranteed by $\nabla^2 J \succ 0$) ensures one exists. The non-negative orthant is convex and
+closed, so the constrained problem inherits both.
+\end{proof}
+
+\begin{remark}
+Uniqueness rests on $\Mmat$ being invertible, \textit{not} on the penalty. Had $\Mmat$ been
+singular with a constant vector in its null space, $\lambda\Pmat$ could not have restored
+uniqueness, because $\Pmat$ is blind to exactly that direction. Regularization here buys
+conditioning and stability, not identifiability --- the problem was already identifiable.
+\end{remark}
+
+\begin{theorem}[The estimator]\label{prop:estimator}
+Define
+\begin{equation}
+  \Amat_\lambda \;=\; \Mmat\transpose\Cd^{-1}\Mmat + \lambda\Pmat .
+  \label{eq:A}
+\end{equation}
+If the unconstrained minimiser of $J$ is non-negative, it is also the solution of
+\eqref{eq:problem}, and it is given by the \textbf{linear} map
+\begin{equation}
+  \boxed{\;
+  \hat{\cvec} = \Rmat_\lambda \dvec ,
+  \qquad
+  \Rmat_\lambda = \Amat_\lambda^{-1}\Mmat\transpose\Cd^{-1} .
+  \;}
+  \label{eq:estimator}
+\end{equation}
+\end{theorem}
+
+\begin{proof}
+Setting \eqref{eq:grad} to zero gives the normal equations
+$(\Mmat\transpose\Cd^{-1}\Mmat + \lambda\Pmat)\cvec = \Mmat\transpose\Cd^{-1}\dvec$, i.e.\
+$\Amat_\lambda\cvec = \Mmat\transpose\Cd^{-1}\dvec$. $\Amat_\lambda \succ 0$ by the proof of
+Proposition~\ref{prop:unique}, hence invertible, giving \eqref{eq:estimator}. For the first claim:
+$J$ is strictly convex, so $\hat\cvec$ is its unique global minimiser over all of $\Reals^n$;
+if it happens to be feasible then it is a fortiori the minimiser over the smaller feasible set.
+\end{proof}
+
+\noindent Two features of \eqref{eq:estimator} deserve emphasis. First, it is exactly linear in
+\dvec, with \textbf{no constant offset}. This is a consequence of penalising
+$\lVert\Pmat\cvec\rVert^2$, which is homogeneous in \cvec; a penalty
+$\lVert\cvec - \cvec_0\rVert^2$ towards a fixed reference $\cvec_0 \ne \bm{0}$ would contribute
+an affine term and complicate everything downstream. Second,
+Proposition~\ref{prop:estimator} gives a practical recipe: solve the problem, and if the answer is
+non-negative, report the analytical $\Rmat_\lambda\dvec$. The estimate and its covariance then
+provably come from the same linear operator, which is what makes the error propagation of
+Section~\ref{sec:propagation} meaningful. When the constraint \textit{is} active the estimator
+is only piecewise linear, and that guarantee is lost.
+
+\subsection{Limits}
+\label{sec:limits}
+
+\begin{theorem}[Small $\lambda$]
+$\Rmat_0 = \Mmat^{-1}$, recovering Section~\ref{sec:inverse}.
+\end{theorem}
+
+\begin{proof}
+Set $\lambda = 0$ in \eqref{eq:estimator}: $\Rmat_0 =
+(\Mmat\transpose\Cd^{-1}\Mmat)^{-1}\Mmat\transpose\Cd^{-1} = \Mmat^{-1}$, as in
+Proposition~\ref{prop:degenerate}.
+\end{proof}
+
+\begin{theorem}[Large $\lambda$]\label{prop:largelambda}
+As $\lambda \to \infty$, $\hat{\cvec} \to t^\star\onevec$ with
+\begin{equation}
+  t^\star = \frac{\mathbf{m}\transpose\Cd^{-1}\dvec}{\mathbf{m}\transpose\Cd^{-1}\mathbf{m}},
+  \qquad \mathbf{m} = \Mmat\onevec .
+\end{equation}
+If in addition the tracer is conservative and $\Cd = \sigma^2\Imat$, then
+$t^\star = \bar{d}$, the arithmetic mean of the observations.
+\end{theorem}
+
+\begin{proof}
+The penalty term $\lambda\lVert\Pmat\cvec\rVert^2$ diverges unless $\Pmat\cvec \to \bm 0$, i.e.\
+unless \cvec approaches $\mathcal{N}(\Pmat) = \operatorname{span}\{\onevec\}$. Writing
+$\cvec = t\onevec$ the penalty vanishes identically and the problem reduces to minimising
+$(t\mathbf{m} - \dvec)\transpose\Cd^{-1}(t\mathbf{m} - \dvec)$ over the scalar $t$.
+Differentiating and setting to zero gives $t^\star$ as stated. For a conservative tracer
+Lemma~\ref{lem:stochastic} gives $\mathbf{m} = \Mmat\onevec = \onevec$, whence with
+$\Cd = \sigma^2\Imat$ we get $t^\star = \onevec\transpose\dvec / \onevec\transpose\onevec =
+\bar{d}$.
+\end{proof}
+
+\noindent So the regularization path runs from the exact, noise-interpolating inverse at
+$\lambda = 0$ to a spatially uniform source field at $\lambda \to \infty$, whose level is the
+(precision-weighted) mean observation. Both endpoints are interpretable, which is a useful
+property when selecting $\lambda$ from the trade-off curve between misfit
+$\lVert\Cd^{-1/2}(\Mmat\hat\cvec - \dvec)\rVert_2$ and roughness
+$\lVert\Pmat\hat\cvec\rVert_2$ \parencite{hansen_rank-deficient_1998}.
+
+\section{Error propagation}
+\label{sec:propagation}
+
+We now propagate the observational uncertainty $\Cd$ into the recovered sources. Because
+$\hat\cvec$ is an exactly linear function of \dvec, this is not a linearisation: it is exact.
+
+\begin{theorem}[Covariance of the sources]\label{prop:Cc}
+If $\dvec$ has covariance $\Cd$ and no constraint is active, then
+\begin{equation}
+  \boxed{\;\Cc \;=\; \Rmat_\lambda\, \Cd\, \Rmat_\lambda\transpose . \;}
+  \label{eq:Cc}
+\end{equation}
+\end{theorem}
+
+\begin{proof}
+For a deterministic matrix $\Rmat$ and random vector $\dvec$,
+$\operatorname{Cov}(\Rmat\dvec) = \Rmat \operatorname{Cov}(\dvec) \Rmat\transpose$, directly
+from the definition of covariance \parencite{menke_geophysical_2012}. Apply with
+$\Rmat = \Rmat_\lambda$, which is deterministic given the network and the fluxes.
+\end{proof}
+
+\begin{theorem}[Covariance of the modelled observations]\label{prop:Cdhat}
+The modelled observations $\hat\dvec = \Mmat\hat\cvec$ have
+\begin{equation}
+  \boxed{\;\Cdhat \;=\; \Mmat\, \Cc\, \Mmat\transpose
+    \;=\; (\Mmat\Rmat_\lambda)\,\Cd\,(\Mmat\Rmat_\lambda)\transpose , \;}
+  \label{eq:Cdhat}
+\end{equation}
+and at $\lambda = 0$, $\Cdhat = \Cd$ exactly.
+\end{theorem}
+
+\begin{proof}
+The first equality is Proposition~\ref{prop:Cc} applied to the linear map $\hat\cvec \mapsto
+\Mmat\hat\cvec$; the second follows by substitution. $\Mmat\Rmat_\lambda$ is the hat (influence)
+matrix. At $\lambda = 0$, $\Rmat_0 = \Mmat^{-1}$ so $\Mmat\Rmat_0 = \Imat$ and $\Cdhat = \Cd$.
+This is as it must be: by Proposition~\ref{prop:degenerate} the unregularized fit reproduces the
+observations exactly, so the modelled observations inherit their uncertainty unchanged.
+\end{proof}
+
+\subsection{The unregularized case is efficient}
+
+\begin{theorem}[Cram\'er--Rao]\label{prop:crb}
+At $\lambda = 0$,
+\begin{equation}
+  \Cc = \Mmat^{-1}\Cd\Mmat^{-\mathsf{T}} = \left(\Mmat\transpose\Cd^{-1}\Mmat\right)^{-1} ,
+\end{equation}
+which is the inverse Fisher information of the model $\dvec \sim
+\mathcal{N}(\Mmat\cvec, \Cd)$. The unregularized estimator therefore attains the Cram\'er--Rao
+lower bound.
+\end{theorem}
+
+\begin{proof}
+For the identity, note $(\Mmat^{-1}\Cd\Mmat^{-\mathsf{T}})^{-1} = \Mmat\transpose\Cd^{-1}\Mmat$
+by inverting each factor and reversing the order. For the Fisher information, the
+log-likelihood is $\ell(\cvec) = -\tfrac{1}{2}(\dvec - \Mmat\cvec)\transpose\Cd^{-1}(\dvec -
+\Mmat\cvec) + \text{const}$, so $\nabla_{\cvec}\ell = \Mmat\transpose\Cd^{-1}(\dvec -
+\Mmat\cvec)$ and $-\nabla^2_{\cvec}\ell = \Mmat\transpose\Cd^{-1}\Mmat$, which is
+deterministic and hence equal to its expectation. The estimator is unbiased (see
+Proposition~\ref{prop:bias} with $\lambda = 0$), so the Cram\'er--Rao bound applies and is met with
+equality.
+\end{proof}
+
+\noindent No estimator, weighted or otherwise, can do better than $\Mmat^{-1}\dvec$ in the
+unbiased class. Section~\ref{sec:degenerate} already told us weighting cannot help; this tells
+us why nothing else can either. The only way to improve on \eqref{eq:varc} is to accept bias
+--- which is exactly what regularization does.
+
+\subsection{Bias, resolution, and the two covariances}
+
+\begin{theorem}[Bias and resolution]\label{prop:bias}
+$\Expect[\hat\cvec] = \Rmat_\lambda\Mmat\cvec_{\text{true}}$, so the estimator has bias
+\begin{equation}
+  \mathbf{b} = (\Rmat_\lambda\Mmat - \Imat)\cvec_{\text{true}}
+             = -\lambda\,\Amat_\lambda^{-1}\Pmat\,\cvec_{\text{true}} ,
+  \label{eq:bias}
+\end{equation}
+and \textbf{resolution matrix}
+\begin{equation}
+  \Rmat_\lambda\Mmat = \Imat - \lambda\Amat_\lambda^{-1}\Pmat .
+  \label{eq:resolution}
+\end{equation}
+The mean-squared error is $\Expect[(\hat\cvec - \cvec_{\text{true}})(\cdot)\transpose]
+= \Cc + \mathbf{b}\mathbf{b}\transpose$.
+\end{theorem}
+
+\begin{proof}
+Substituting $\dvec = \Mmat\cvec_{\text{true}} + \bm{\varepsilon}$ with
+$\Expect[\bm{\varepsilon}] = \bm 0$ into \eqref{eq:estimator} gives the first claim. Then
+\[
+  \Rmat_\lambda\Mmat - \Imat
+  = \Amat_\lambda^{-1}\Mmat\transpose\Cd^{-1}\Mmat - \Imat
+  = \Amat_\lambda^{-1}\!\left(\Mmat\transpose\Cd^{-1}\Mmat - \Amat_\lambda\right)
+  = -\lambda\Amat_\lambda^{-1}\Pmat ,
+\]
+using \eqref{eq:A}. The MSE decomposition is the standard bias--variance identity
+\parencite{hoerl_ridge_1970, aster_parameter_2018}.
+\end{proof}
+
+\noindent The bias vanishes when $\lambda = 0$, and also whenever $\Pmat\cvec_{\text{true}} =
+\bm 0$, i.e.\ when the true source field really is uniform --- the penalty is then telling the
+truth and costs nothing. Since $\cvec_{\text{true}}$ is unknown, $\mathbf{b}$ cannot be
+evaluated; the resolution matrix \eqref{eq:resolution} is the standard computable proxy
+\parencite{menke_geophysical_2012}, equal to $\Imat$ at $\lambda = 0$ and degrading as
+$\lambda$ grows. Its trace, $\operatorname{tr}(\Rmat_\lambda\Mmat)$, is the effective number of
+degrees of freedom the data constrain.
+
+This bias is precisely why \eqref{eq:Cc} must be interpreted with care. It answers the
+question ``if I repeated the measurements, how would my estimate scatter?'' --- and a heavily
+damped estimator scatters very little while being systematically wrong. A second covariance
+answers a different and often more useful question.
+
+\begin{theorem}[Posterior covariance]\label{prop:posterior}
+Read the penalty as a Gaussian prior with precision $\lambda\Pmat$ and the likelihood as
+$\dvec \mid \cvec \sim \mathcal{N}(\Mmat\cvec, \Cd)$. Then the posterior covariance is
+$\Amat_\lambda^{-1}$, and
+\begin{equation}
+  \boxed{\;
+  \Rmat_\lambda\Cd\Rmat_\lambda\transpose
+  \;=\; \Amat_\lambda^{-1} \;-\; \lambda\,\Amat_\lambda^{-1}\Pmat\Amat_\lambda^{-1} .
+  \;}
+  \label{eq:identity}
+\end{equation}
+Consequently $\Cc \preceq \Amat_\lambda^{-1}$, with equality if and only if $\lambda = 0$.
+\end{theorem}
+
+\begin{proof}
+For the linear-Gaussian model the posterior precision is the sum of the likelihood precision
+$\Mmat\transpose\Cd^{-1}\Mmat$ and the prior precision $\lambda\Pmat$, giving $\Amat_\lambda$
+\parencite{tarantola_inverse_2005}. For the identity, substitute \eqref{eq:estimator} and use
+$\Cd^{-1}\Cd\Cd^{-1} = \Cd^{-1}$:
+\begin{align*}
+  \Rmat_\lambda\Cd\Rmat_\lambda\transpose
+  &= \Amat_\lambda^{-1}\Mmat\transpose\Cd^{-1}\,\Cd\,\Cd^{-1}\Mmat\Amat_\lambda^{-1} \\
+  &= \Amat_\lambda^{-1}\left(\Mmat\transpose\Cd^{-1}\Mmat\right)\Amat_\lambda^{-1} \\
+  &= \Amat_\lambda^{-1}\left(\Amat_\lambda - \lambda\Pmat\right)\Amat_\lambda^{-1}
+   = \Amat_\lambda^{-1} - \lambda\Amat_\lambda^{-1}\Pmat\Amat_\lambda^{-1},
+\end{align*}
+using the symmetry of $\Amat_\lambda$. For the ordering, note that for any $\mathbf{x}$,
+$\mathbf{x}\transpose\Amat_\lambda^{-1}\Pmat\Amat_\lambda^{-1}\mathbf{x} =
+(\Amat_\lambda^{-1}\mathbf{x})\transpose\Pmat(\Amat_\lambda^{-1}\mathbf{x}) \ge 0$ by
+Lemma~\ref{lem:P}, so the subtracted term is positive semi-definite. It is zero for all
+$\mathbf{x}$ only if $\lambda = 0$, since $\Amat_\lambda^{-1}$ is non-singular and $\Pmat \ne
+\bm 0$.
+\end{proof}
+
+\noindent The propagated covariance is therefore always the smaller of the two, and quoting it
+alone at large $\lambda$ understates the true error. The posterior covariance
+$\Amat_\lambda^{-1}$ accounts for what the damping costs as well as what it stabilises, and is
+the more honest error bar to report whenever $\lambda > 0$. At $\lambda = 0$ the two coincide
+and both equal the Cram\'er--Rao bound of Proposition~\ref{prop:crb}.
+
+\section{Summary}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{@{}ll@{}}
+\toprule
+Quantity & Expression \\
+\midrule
+Mixing matrix & $M_{ij} = \Theta_{ij}\alpha_{j\to i} q_j / Q_i$ \\
+Exact inverse & $c_i = \left(Q_i d_i - \sum_{p \in A(i)}\alpha_{p\to i}Q_p d_p\right)/q_i$ \\
+Amplification & $\kappa_i = Q_i/q_i = 1/M_{ii}$ \\
+Penalty operator & $\Pmat = \Imat - n^{-1}\onevec\onevec\transpose$ \\
+Normal matrix & $\Amat_\lambda = \Mmat\transpose\Cd^{-1}\Mmat + \lambda\Pmat$ \\
+Estimator & $\Rmat_\lambda = \Amat_\lambda^{-1}\Mmat\transpose\Cd^{-1}$ \\
+Source covariance & $\Cc = \Rmat_\lambda\Cd\Rmat_\lambda\transpose$ \\
+Prediction covariance & $\Cdhat = \Mmat\Cc\Mmat\transpose$ \\
+Posterior covariance & $\Amat_\lambda^{-1}$ \\
+Resolution & $\Rmat_\lambda\Mmat = \Imat - \lambda\Amat_\lambda^{-1}\Pmat$ \\
+Bias & $\mathbf{b} = -\lambda\Amat_\lambda^{-1}\Pmat\cvec_{\text{true}}$ \\
+\bottomrule
+\end{tabular}
+\caption{\textbf{Principal results.} At $\lambda = 0$: $\Rmat_0 = \Mmat^{-1}$, the resolution
+matrix is $\Imat$, the bias vanishes, the two covariances coincide, and $\Cc$ attains the
+Cram\'er--Rao bound.}
+\end{table}
+
+\noindent The practical picture is this. The mixing matrix is invertible, so the unmixing
+problem always has an exact solution --- but that solution differences neighbouring
+observations, amplifying their errors by $\kappa_i = Q_i/q_i$, and interpolates the noise.
+Regularization trades this variance for bias, and because the penalty is a homogeneous
+quadratic the resulting estimator stays exactly linear in the data. That linearity is what
+delivers closed-form covariances, a resolution matrix, and effective degrees of freedom, none
+of which are available from the log-ratio formulation without Monte Carlo resampling. The price
+is the assumption of absolute rather than relative misfit --- an assumption that
+Remark~\ref{rem:logratio} shows is substantially repaired by weighting with a proportional
+error model, and which is in any case mild for tracers of low log-variance such as isotopic
+ratios \parencite{blondes_practical_2016}. For tracers whose information really is relative
+rather than absolute --- that is, genuinely compositional data
+\parencite{aitchison_statistical_1986} --- the log-ratio formulation remains the better choice.
+
+Two caveats bear repeating. Regularization is not optional: by
+Proposition~\ref{prop:degenerate} the unregularized problem reproduces the data exactly, noise
+included. And the analytical machinery of Section~\ref{sec:propagation} is valid only while
+the constraint $\cvec \ge 0$ is inactive; when sites clamp, the estimator ceases to be linear
+and the reported covariances describe the unconstrained estimator instead.
+
+\printbibliography
+
+\end{document}
