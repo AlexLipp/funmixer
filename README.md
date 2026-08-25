@@ -103,6 +103,56 @@ Some documented example scripts are given in the directory `examples/`, and are 
 python examples/unmix_mwe.py
 ```
 
+## Choosing a solver
+
+Two solvers are available. They differ in what they treat as "misfit", which changes both the
+answer and what you can say about its uncertainty.
+
+| | `SampleNetworkUnmixer` | `LinearSampleNetworkUnmixer` |
+|---|---|---|
+| Misfit | relative (log-ratio surrogate) | absolute (least-squares) |
+| Best for | data spanning orders of magnitude | data with low log-variance, e.g. isotopic |
+| Forward model | convex program | exactly invertible matrix `d = Mc` |
+| Regularization | shrinks towards the mean *observation* | shrinks towards the mean *model* |
+| Uncertainty | Monte Carlo (`solve_montecarlo`) | closed form, `C_c = R C_d R^T` |
+| Resolution | not available | resolution matrix and effective DOF |
+
+The linear solver is documented in Appendix A of the paper. It is the faster and more
+informative of the two when its assumptions hold, because the mixing matrix is square and
+invertible, so the estimator, its covariance, and its resolution are all available in closed
+form:
+
+```python
+problem = funmixer.LinearSampleNetworkUnmixer(sample_network, use_regularization=True)
+solution = problem.solve(
+    element_data,
+    regularization_strength=1.0,
+    data_covariance=10.0,          # a 10% relative error on the observations
+)
+solution.upstream_preds        # recovered source concentrations
+solution.upstream_std          # their 1-sigma uncertainties, no Monte Carlo needed
+solution.downstream_covariance # covariance of the modelled observations
+solution.effective_dof         # how many degrees of freedom the data actually constrain
+```
+
+See `examples/unmix_linear_mwe.py`.
+
+**Check the diagnostics before trusting a linear solution.** Inverting `M` amounts to
+differencing each site against its upstream neighbours, and the noise amplification at each
+site is `Q_i/q_i`, the ratio of total upstream flux to the flux the sub-basin itself generates.
+Where sub-basin areas are very uneven this is large, and the unregularized inversion will
+produce negative or physically impossible concentrations. `solution.amplification`,
+`solution.condition_number`, `solution.clamped_nodes` and `solution.unconstrained_preds` all
+report on this. On the `Mg` example data, the unregularized inversion clamps 10 of 63 sites at
+zero and would otherwise return concentrations up to 145% by mass; at `lambda = 1` none clamp.
+Regularization is not optional for this kind of data.
+
+Note that `regularization_strength` is **not** comparable between the two solvers: the linear
+one weights a squared penalty on deviations from the mean model, the non-linear one an
+unsquared norm of deviations from the mean observation. Within the linear solver, lambda is
+dimensionless (the data are mean-normalised internally), so it does transfer between elements
+and datasets.
+
 ## Cite 
 
 If you use this please cite the paper, which is published at *Water Resources Research*.

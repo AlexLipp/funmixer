@@ -237,8 +237,12 @@ def nx_get_downstream_data(G: nx.DiGraph, x: str) -> Optional[SampleNode]:
         Exception: If there is more than one downstream neighbor.
     """
     s = nx_get_downstream_node(G, x)
-    if s:
+    # NB: an explicit `is not None` check, not a truthiness test. Node names may be integers,
+    # and a node legitimately named `0` would otherwise be reported as having no downstream
+    # neighbour -- silently disconnecting the outlet of any integer-labelled network.
+    if s is not None:
         return cast(SampleNode, G.nodes[s]["data"])
+    return None
 
 
 def plot_network(G: nx.DiGraph) -> None:
