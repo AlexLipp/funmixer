@@ -94,7 +94,7 @@ solvers there rather than passing kwargs through.
 
 ## Commands
 
-Run everything from the repository root (examples use paths like `data/d8.asc`).
+Run everything from the repository root (examples use paths like `data/d8.tif`).
 
 ```bash
 conda env create -f requirements.yaml && conda activate funmixer

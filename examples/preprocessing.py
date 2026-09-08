@@ -24,15 +24,15 @@ import pandas as pd
 # The example file "d8_bad_bounds.tif" has correct values but incorrect boundary conditions.
 # We can test this using the check_d8 function.
 
-check_d8("data/d8_bad_bounds.tif")
+check_d8("data/cairngorms_d8_badbounds.tif")
 
 # We can fix the boundary conditions using the set_d8_boundaries_to_zero function which sets all boundary cells to 0,
 # writing the corrected raster to a new file.
 
-set_d8_boundaries_to_zero("data/d8_bad_bounds.tif")
+set_d8_boundaries_to_zero("data/cairngorms_d8_badbounds.tif")
 
 # Now we can check the corrected raster.
-check_d8("d8_bad_bounds_fix_bounds.tif")
+check_d8("cairngorms_d8_badbounds_fix_bounds.tif")
 
 ### Snapping misaligned sample sites to the nearest drainage network ###
 # In general, sample sites are not perfectly aligned with the drainage network, due to
@@ -63,7 +63,7 @@ noisy_samples = pd.read_csv("data/noisy_sample_data.csv")
 
 # Load sample network
 sample_network, labels = get_sample_graph(
-    flowdirs_filename="data/d8.asc",
+    flowdirs_filename="data/d8.tif",
     sample_data_filename="data/noisy_sample_data.csv",
 )
 
@@ -83,7 +83,7 @@ plt.show()
 # snapped to the correct drainage pixel.
 
 snap_to_drainage(
-    flow_dirs_filename="data/d8.asc",
+    flow_dirs_filename="data/d8.tif",
     sample_sites_filename="data/noisy_sample_data.csv",
     drainage_area_threshold=40000000,  # 40 km^2
     plot=True,
@@ -94,7 +94,7 @@ snap_to_drainage(
 # Once this is done, we can load in the snapped sample sites and build the sample network again.
 # Load sample network
 sample_network, labels = get_sample_graph(
-    flowdirs_filename="data/d8.asc",
+    flowdirs_filename="data/d8.tif",
     sample_data_filename="noisy_sample_data_snapped.csv",
 )
 

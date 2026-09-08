@@ -9,7 +9,7 @@ logger.addHandler(logging.StreamHandler())
 
 
 def main() -> None:
-    flowdirs_filename = "data/d8.asc"
+    flowdirs_filename = "data/d8.tif"
     data_filename = "data/sample_data.csv"
     excluded_elements = ["Bi", "S"]
 

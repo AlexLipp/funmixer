@@ -8,9 +8,13 @@ The algorithm requires:
 
 1) A GDAL readable raster of D8 flow directions. We use the ESRI/Arc D8 convention of representing directions with increasing powers of 2 (i.e., 1, 2, 4, 8 etc.) with sink pixels indicated by 0. We assume that every cell in the domain eventually flows into a sink node within the domain (or is itself a sink node). This assumption requires that **every boundary pixel is set to be a sink**.
 
-2) A `.csv` file which contains the names, locations and geochemical observations at the sample sites. Sample names (e.g., 'SampleA') are expected in **column 1** and the x and y-coordinates of the sample sites in **columns 2 and 3**. The x and y-coordinates of the sample sites need to be in the same reference system as the D8 raster. It is assumed that the sample sites have already been manually aligned onto the drainage network. Subsequent columns contain the name of a given tracer (e.g., `Mg`) and their concentrations (arbitrary units).
+2) A `.csv` file which contains the names, locations and geochemical observations at the sample sites. Sample names (e.g., 'SampleA') are expected in **column 1** and the x and y-coordinates of the sample sites in **columns 2 and 3**. The x and y-coordinates of the sample sites need to be in the same reference system as the D8 raster (for the supplied example data this is EPSG:27700). It is assumed that the sample sites have already been manually aligned onto the drainage network. Subsequent columns contain the name of a given tracer (e.g., `Mg`) and their concentrations (arbitrary units).
 
-`funmixer` does include some basic data preprocessing functions that can be used to align the sample sites to the drainage network and fix the boundary conditions of the D8 raster. An example of use is given in the `examples/` directory. Example, valid, datasets are contained in `data/d8.asc` and `sample_data.dat`. 
+`funmixer` does include some basic data preprocessing functions that can be used to align the sample sites to the drainage network and fix the boundary conditions of the D8 raster. An example of use is given in the `examples/` directory. Example, valid, datasets are contained in `data/d8.tif` and `data/sample_data.csv`.
+
+### The example dataset
+
+The example data supplied in `data/` are a real geochemical survey of north-east Scotland (the Cairngorms and surrounding catchments: the Spey, Dee, Don, Deveron and Tay). Both the D8 raster (`data/d8.tif`, 50 m resolution) and the sample site coordinates (`data/sample_data.csv`) are georeferenced to the **OSGB36 / British National Grid (EPSG:27700)** projection, so the `x_coordinate` and `y_coordinate` columns are eastings and northings in metres. The files carry their coordinate reference system, so they can be loaded directly into GIS software such as QGIS and will overlay correctly. `data/noisy_sample_data.csv` is the same table with the sample sites deliberately displaced from the drainage network, and is used by `examples/preprocessing.py` to demonstrate `snap_to_drainage`.
 
 Some common data input problems can be solved by: 
 - Checking that there is not trailing white-space at the end of the sample site data table. 
