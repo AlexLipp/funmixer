@@ -1,6 +1,6 @@
 # Funmixer - Unmixing nested observed concentrations in river networks for source regions
 
-This repository implements an efficient solution to the unmixing of nested concentrations in a (river) network using convex optimisation. The method is described in our article in [_Water Resources Research_](https://doi.org/10.1029/2023WR036159) 
+This repository implements an efficient solution to the unmixing of nested concentrations in a (river) network using convex optimisation. The method is described in full in our article, *Using Convex Optimization to Efficiently Apportion Tracer and Pollutant Sources From Point Concentration Observations*, published in [_Water Resources Research_](https://doi.org/10.1029/2023WR036159) (DOI: [10.1029/2023WR036159](https://doi.org/10.1029/2023WR036159)). A copy of the paper is included in this repository at [`docs/Barnes_Lipp_2024.pdf`](docs/Barnes_Lipp_2024.pdf), and is the reference for the mathematics, assumptions and implementation details of the method.
 
 ## Data input assumptions
 
@@ -105,8 +105,8 @@ python examples/unmix_mwe.py
 
 ## Cite 
 
-If you use this please cite the paper, which is published at *Water Resources Research*.
+If you use this please cite the paper, which is published at *Water Resources Research* (a copy is included at [`docs/Barnes_Lipp_2024.pdf`](docs/Barnes_Lipp_2024.pdf)):
 
-> Barnes, R. and Lipp, A. _Using convex optimization to efficiently apportion tracer and pollutant sources from point concentration observations_, DOI [10.1029/2023WR036159](https://doi.org/10.1029/2023WR036159), 2024. 
+> Barnes, R., & Lipp, A. G. (2024). Using convex optimization to efficiently apportion tracer and pollutant sources from point concentration observations. *Water Resources Research*, 60, e2023WR036159. https://doi.org/10.1029/2023WR036159
 
 A `.cff` citation file is also provided in the repository.
