@@ -1,8 +1,13 @@
 from .d8processing import *  # noqa: F403
 
+from .linear_unmixer import (
+    LinearFunmixerSolution,
+    LinearSampleNetworkUnmixer,
+)
 from .network_unmixer import (
     ELEMENT_LIST,
     ElementData,
+    FunmixerSolution,
     SampleNetworkUnmixer,
     SampleNode,
     forward_model,
@@ -21,6 +26,9 @@ from .network_unmixer import (
 __all__ = [
     "ElementData",
     "ELEMENT_LIST",
+    "FunmixerSolution",
+    "LinearFunmixerSolution",
+    "LinearSampleNetworkUnmixer",
     "get_element_obs",
     "get_unique_upstream_areas",
     "get_upstream_concentration_map",
