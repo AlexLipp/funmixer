@@ -19,6 +19,10 @@ closely:
   squares would over-weight the undiluted upstream samples. Implemented as `cp_log_ratio` in
   `cvxpy_extensions.py`. Undefined at zero, so zero observations must be removed or replaced by the
   caller.
+- **BDL misfit** (not in the paper): for an observation reported as `<X` the misfit is
+  `max(1, d_pred/X)` — flat below the detection limit, identical to the standard misfit above
+  it. Implemented as `cp_bdl_log_ratio` in `bdl_unmixer.py`. Still convex and DPP; see
+  "Censored data" below for why it is nonetheless degenerate without regularization.
 - **Regularization** (§2.4, Eq. 8): the same misfit function applied between each `c_i` and the
   *geometric* mean of the observations, scaled by `λ`. There is deliberately **no** roughness /
   spatial-smoothness term (unlike Lipp et al. 2021) — no convex relative-difference term between two
@@ -47,6 +51,10 @@ Three layers, each with a distinct job:
    distance), used for first-order decay.
 3. **`funmixer/network_unmixer.py`**. The optimization. `SampleNetworkUnmixer` builds the CVXPY
    problem once in `__init__` and solves it many times.
+4. **`funmixer/bdl_unmixer.py`**. Below-detection-limit support: the `BDLObservation` schema,
+   the `"<X"` parser (`parse_bdl_value`, `get_bdl_element_obs`),
+   `BDLSampleNetworkUnmixer`, and `visualise_downstream_bdl`. Pure subclassing — it adds no
+   options to the base class.
 
 `funmixer/__init__.py` re-exports the public API; anything user-facing should be added to both the
 import list and `__all__`.
@@ -78,6 +86,43 @@ The devices used to stay DPP, all in `_build_primary_terms`:
 Consequence: `solve()` must set observation → export rate → rate constant → total flux parameters in
 that order.
 
+### Censored (below-detection-limit) data
+
+`BDLSampleNetworkUnmixer` inherits everything from `SampleNetworkUnmixer` and overrides only
+four things. Three small hooks exist on the base class purely to make that possible; if you
+change any of them, check the subclass still works:
+
+- `_misfit_term(site_name, prediction, observed)` — the single point at which the objective's
+  data-fitting term is built. `_build_primary_terms` calls it per node.
+- `self._obs_geo_mean` — set by `_set_observation_parameters`, read by `solve` to map results
+  back out of normalised units. It used to be recomputed independently in `solve`; caching it
+  is what lets a subclass normalise differently without overriding `solve`.
+- `_resample_observations(observation_data, relative_error)` — the Monte Carlo perturbation,
+  factored out of `solve_montecarlo`.
+
+Traps:
+
+- `BDLSampleNetworkUnmixer.__init__` **must** populate `self._is_bdl` before calling
+  `super().__init__()`, because the base constructor calls `_build_primary_terms`, which calls
+  `_misfit_term`, which reads it.
+- Censoring status is baked into the problem structure at build time, so it cannot change
+  between solves (`_check_censoring_pattern` enforces this). Observation *values* can, exactly
+  as in the base class.
+- Normalization uses **half** the detection limit for censored sites (standard practice for
+  censored data); the misfit uses the **full** limit. Do not conflate the two.
+
+**Convexity.** `max(1, x/DL)` is the pointwise maximum of a constant and a linear function, so
+it is DCP-convex and DPP — a flat region is convex. The problem does *not* become non-convex,
+and `_build_problem`'s `assert self._problem.is_dcp(dpp=True)` passes. What is lost is
+uniqueness: inside the flat region every prediction scores identically, so the minimiser is
+non-unique and the solver returns an arbitrary point there (verified: an all-BDL problem
+solves to `optimal` and returns a value strictly inside the flat region). Regularization pulls
+each `c_i` towards the geometric mean and restores a well-posed answer, which is why
+`use_regularization=False` emits a `UserWarning`. Consequently `tests/bdl_unmixer_test.py`
+asserts exact recovery only for *uncensored* data; censored behaviour is tested through
+deterministic properties (censoring above the truth cannot increase the misfit; censoring
+below it pulls predictions down to the limit).
+
 ### Graph construction order
 
 `_build_primary_terms` iterates in **topological order** (`nx_topological_sort_with_data`) so
@@ -107,11 +152,14 @@ linger in `build/`.
 
 ```bash
 pytest tests/random_networks_test.py                 # unit tests (Hypothesis, property-based)
+pytest tests/bdl_unmixer_test.py                     # below-detection-limit unit tests
 pytest tests/random_networks_test.py::test_rary_network   # a single test
 python3 tests/synthetic_test.py                      # end-to-end synthetic recovery + plots
 python tests/runtime_benchmark.py run                # ~30 min, caches to benchmark_results.pkl
 python tests/runtime_benchmark.py plot               # plot cached results
 python examples/unmix_mwe.py                         # minimal working example
+python examples/unmix_BDL.py                         # minimal working example, censored data
+python data/make_bdl_sample_data.py                  # regenerate data/BDL_sample_data.csv
 ```
 
 The tests are **property-based** (Hypothesis), not example-based: they generate random balanced and
@@ -137,6 +185,11 @@ debugging a user's dataset:
   `check_d8` verifies both; `set_d8_boundaries_to_zero` repairs the boundary.
 - Sample CSV: name in column 1, x and y in columns 2 and 3 (same CRS as the raster), tracers in
   subsequent columns. Trailing whitespace in the table is a common failure.
+- Below-detection-limit values are written `"<X"` (e.g. `"<0.5"`), parsed by
+  `parse_bdl_value`. Read such tables with `dtype=str, keep_default_na=False` so the strings
+  survive. A blank cell is missing data, not a censored value: `get_bdl_element_obs` omits
+  those samples, and `BDLSampleNetworkUnmixer` then rejects the network because every site
+  needs an observation to fix its censoring status.
 - Sample sites must already be snapped onto the drainage network, or sub-basins come out
   unrealistically small / the network comes out disconnected. `snap_to_drainage` does this.
 
@@ -159,4 +212,7 @@ named `0`) that has not landed on `main`.
 
 When changing shared code on `main` (`SampleNode`, `get_sample_graph`, `__init__.py`,
 `plot_sweep_of_regularizer_strength`), keep this branch in mind — the linear solver reuses all of
-them.
+them. The BDL work added three hooks to `SampleNetworkUnmixer` (`_misfit_term`,
+`self._obs_geo_mean`, `_resample_observations`); these are behaviour-preserving refactors, but
+they touch `_build_primary_terms`, `_set_observation_parameters`, `solve` and
+`solve_montecarlo`, so expect to resolve conflicts there when merging.

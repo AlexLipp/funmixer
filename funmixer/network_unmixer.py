@@ -308,6 +308,9 @@ class SampleNetworkUnmixer:
         self._constraints: List[cp.Constraint] = []
         self._regularizer_strength = cp.Parameter(nonneg=True)
         self._problem: Optional[cp.Problem] = None
+        # Geometric mean of the observations of the most recent solve, used to map results
+        # back out of normalised units. Set by `_set_observation_parameters`.
+        self._obs_geo_mean: float = 1.0
         self._build_primary_terms()
         if use_regularization:
             self._build_regularizer_terms()
@@ -392,7 +395,7 @@ class SampleNetworkUnmixer:
             self._site_to_observation[my_data.name] = observed
 
             # Calculate misfit and append to primary terms in objective function
-            misfit = cp_log_ratio(normalised_concentration_dummy, observed)
+            misfit = self._misfit_term(my_data.name, normalised_concentration_dummy, observed)
             self._primary_terms.append(misfit)
 
             if (ds := nx_get_downstream_data(self.sample_network, sample_name)) is not None:
@@ -408,6 +411,28 @@ class SampleNetworkUnmixer:
                 # constraint total_tracer_flux_dummy_ds == ... is DPP. No extra variable
                 # is needed, which preserves numerical accuracy for long chains.
                 ds.my_total_tracer_flux += total_tracer_flux_dummy * alpha_param
+
+    def _misfit_term(
+        self, site_name: str, prediction: cp.Variable, observed: ReciprocalParameter
+    ) -> cp.Expression:
+        """
+        Build the convex misfit between a predicted concentration and its observation.
+
+        This is the single point at which the objective's data-fitting term is defined.
+        Subclasses override it to model observations differently (see
+        `BDLSampleNetworkUnmixer`, which treats below-detection-limit values as one-sided).
+        Any override must stay DCP-convex and DPP, or `_build_problem` will assert.
+
+        Args:
+            site_name: Name of the sample site. Unused here, but lets subclasses vary the
+                misfit per site.
+            prediction: Parameter-free variable holding the normalised predicted concentration.
+            observed: The observation at this site, as a ReciprocalParameter.
+
+        Returns:
+            A convex expression penalising disagreement between prediction and observation.
+        """
+        return cp_log_ratio(prediction, observed)
 
     def _build_regularizer_terms(self) -> None:
         """
@@ -446,6 +471,9 @@ class SampleNetworkUnmixer:
             observation_data: The observation data.
         """
         obs_mean: float = geo_mean(list(observation_data.values()))
+        # Cached so `solve` need not recompute it, and so subclasses that normalise
+        # differently only have to override this method.
+        self._obs_geo_mean = obs_mean
         # Reset all sites' observations
         for x in self._site_to_observation.values():
             x.value = None
@@ -590,7 +618,9 @@ class SampleNetworkUnmixer:
             logger.warning(f"Status = {problem.status}")
 
         # Return outputs
-        obs_mean: float = geo_mean(list(observation_data.values()))
+        # Set by `_set_observation_parameters` above. Read rather than recomputed so that
+        # subclasses with a different normalisation inherit `solve` unchanged.
+        obs_mean: float = self._obs_geo_mean
 
         downstream_preds = self.get_downstream_prediction_dictionary()
         downstream_preds = {sample: value * obs_mean for sample, value in downstream_preds.items()}
@@ -612,6 +642,27 @@ class SampleNetworkUnmixer:
             upstream_preds=upstream_preds,
             downstream_preds=downstream_preds,
         )
+
+    def _resample_observations(
+        self, observation_data: ElementData, relative_error: float
+    ) -> ElementData:
+        """
+        Draw one noisy realisation of the observations for a Monte Carlo iteration.
+
+        Subclasses override this when some observations should not be perturbed (see
+        `BDLSampleNetworkUnmixer`, which holds detection limits fixed).
+
+        Args:
+            observation_data: The observed data for each site.
+            relative_error: The *relative* error as a percentage.
+
+        Returns:
+            A resampled copy of the observation data.
+        """
+        return {
+            sample: value * np.random.normal(loc=1, scale=relative_error / 100)
+            for sample, value in observation_data.items()
+        }
 
     def solve_montecarlo(
         self,
@@ -663,10 +714,9 @@ class SampleNetworkUnmixer:
         predictions_up_mc: DefaultDict[str, List[float]] = defaultdict(list)
 
         for _ in tqdm.tqdm(range(num_repeats), total=num_repeats):
-            observation_data_resampled = {
-                sample: value * np.random.normal(loc=1, scale=relative_error / 100)
-                for sample, value in observation_data.items()
-            }
+            observation_data_resampled = self._resample_observations(
+                observation_data=observation_data, relative_error=relative_error
+            )
             solution = self.solve(
                 observation_data=observation_data_resampled,
                 solver=solver,
