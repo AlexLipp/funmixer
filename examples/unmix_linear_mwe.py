@@ -35,7 +35,7 @@ REGULARIZATION_STRENGTH = 1.0
 
 def main() -> None:
     sample_network, labels = funmixer.get_sample_graph(
-        flowdirs_filename="data/d8.asc",
+        flowdirs_filename="data/d8.tif",
         sample_data_filename="data/sample_data.csv",
     )
 
