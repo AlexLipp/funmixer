@@ -30,7 +30,7 @@ logging.getLogger().addHandler(logging.StreamHandler())
 
 ELEMENT = "Mg"
 RELATIVE_ERROR_PERCENT = 10.0
-REGULARIZATION_STRENGTH = 1.0
+REGULARIZATION_STRENGTH = -1.0
 
 
 def main() -> None:
