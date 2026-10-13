@@ -461,14 +461,16 @@ class D8Accumulator:
 
 def get_sample_graph(
     flowdirs_filename: str,
-    sample_data_filename: str,
+    sample_data: str | Path | pd.DataFrame,
 ) -> tuple[nx.DiGraph, np.ndarray]:
     """
     Function to build a directed graph of sample sites from a D8 flow direction grid and table of sample locations.
 
     Args:
         flowdirs_filename (str): The filename of the D8 flow direction grid.
-        sample_data_filename (str): The filename of the sample data file. First three columns should be: sample name, x coordinate, y coordinate.
+        sample_data: The sample table, either as a CSV filename or an already-loaded DataFrame
+            (so a caller that also needs the chemistry reads the file only once). First three
+            columns should be: sample name, x coordinate, y coordinate.
 
     Returns:
         Tuple[nx.DiGraph, np.ndarray]: Tuple of 1) A directed graph of sample sites with SampleNode objects as nodes. 2) a
@@ -478,21 +480,24 @@ def get_sample_graph(
     acc = D8Accumulator(flowdirs_filename)
     acc.accumulate()
 
-    # Read the sample data file and build a sample site graph
-    samples = pd.read_csv(sample_data_filename)
+    if isinstance(sample_data, pd.DataFrame):
+        samples = sample_data
+    else:
+        samples = pd.read_csv(sample_data)
 
-    # Check that second and third columns are numeric
-    if not pd.api.types.is_numeric_dtype(samples.iloc[:, 1]) or not pd.api.types.is_numeric_dtype(
-        samples.iloc[:, 2]
-    ):
+    # Coerce rather than require a numeric dtype, so tables read with `dtype=str` (as
+    # below-detection-limit tables must be) still work.
+    try:
+        xs = pd.to_numeric(samples.iloc[:, 1])
+        ys = pd.to_numeric(samples.iloc[:, 2])
+    except ValueError as err:
         raise ValueError(
             "Second and third columns of sample data must be numeric (x and y coordinates)."
-        )
+        ) from err
 
     # Extract the sample names, x and y coordinates from the first three columns of dat table
     sample_dict = {}
-    for i in range(len(samples)):
-        name, x, y = samples.iloc[i, 0], samples.iloc[i, 1], samples.iloc[i, 2]
+    for name, x, y in zip(samples.iloc[:, 0], xs, ys, strict=True):
         node = acc.coord_to_node(x, y)
         sample_dict[node] = {"name": str(name), "x": x, "y": y}
 
