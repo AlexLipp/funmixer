@@ -8,7 +8,7 @@ than iterative.
 """
 
 import warnings
-from typing import Callable, Optional
+from collections.abc import Callable
 
 import networkx as nx
 import numpy as np
@@ -87,7 +87,7 @@ def test_mixing_matrix_matches_forward_model(
 ) -> None:
     """`M @ c` must reproduce `forward_model` exactly: it is the same sweep, vectorised."""
     network = default_network(branching_factor, height)
-    rate_constants = None if conservative else {n: rate_constant for n in network.nodes}
+    rate_constants = None if conservative else dict.fromkeys(network.nodes, rate_constant)
     export_rates = (
         {n: draw_random_log_uniform(0.1, 10.0) for n in network.nodes} if use_export_rates else None
     )
@@ -121,7 +121,7 @@ def test_mixing_matrix_matches_forward_model(
 def test_mixing_matrix_structure(branching_factor: int, height: int, conservative: bool) -> None:
     """M is lower triangular in topological order, with a positive diagonal."""
     network = default_network(branching_factor, height)
-    rate_constants = None if conservative else {n: 1.0 for n in network.nodes}
+    rate_constants = None if conservative else dict.fromkeys(network.nodes, 1.0)
     problem = LinearSampleNetworkUnmixer(network, use_regularization=False)
     M, _, _ = problem._build_mixing_matrix(None, rate_constants)
 
@@ -138,7 +138,7 @@ def test_mixing_matrix_structure(branching_factor: int, height: int, conservativ
 def test_closed_form_inverse_matches_dense_inverse() -> None:
     """The sparse O(n) closed form must agree with an explicit dense inverse."""
     network = default_network(branching_factor=3, height=3)
-    rate_constants = {n: 0.7 for n in network.nodes}
+    rate_constants = dict.fromkeys(network.nodes, 0.7)
     problem = LinearSampleNetworkUnmixer(network, use_regularization=False)
     M, total_flux, own_flux = problem._build_mixing_matrix(None, rate_constants)
 
@@ -165,7 +165,7 @@ def test_exact_round_trip(
 ) -> None:
     """forward_model -> solve must recover the source concentrations exactly at lambda = 0."""
     network = default_network(branching_factor, height)
-    rate_constants = None if conservative else {n: rate_constant for n in network.nodes}
+    rate_constants = None if conservative else dict.fromkeys(network.nodes, rate_constant)
     upstream = random_concentrations(network)
     downstream = funmixer.forward_model(
         sample_network=network, upstream_concentrations=upstream, rate_constants=rate_constants
@@ -476,7 +476,7 @@ def test_weighted_misfit_is_a_chi_distance() -> None:
 
 
 @pytest.mark.parametrize("lam, use_reg", [(None, False), (1e-2, True)])
-def test_covariance_matches_monte_carlo(lam: Optional[float], use_reg: bool) -> None:
+def test_covariance_matches_monte_carlo(lam: float | None, use_reg: bool) -> None:
     """
     The load-bearing test: the closed-form covariance must reproduce what you get by actually
     perturbing the data and re-solving.
@@ -586,9 +586,7 @@ def test_covariance_scales_quadratically_with_units() -> None:
         assert np.isclose(
             scaled.upstream_preds[node], base.upstream_preds[node] * factor, rtol=1e-9
         )
-    assert np.allclose(
-        scaled.upstream_covariance, base.upstream_covariance * factor**2, rtol=1e-9
-    )
+    assert np.allclose(scaled.upstream_covariance, base.upstream_covariance * factor**2, rtol=1e-9)
 
 
 # ------------------------------------------------------------------ constraints

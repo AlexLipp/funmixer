@@ -149,7 +149,7 @@ def count_donors(cnp.int64_t[:] r) -> int[:] :
     cdef int j
     for j in range(n):
         d[r[j]] += 1
-    return d    
+    return d
 
 @cython.boundscheck(False)  # Deactivate bounds checking
 @cython.wraparound(False)   # Deactivate negative indexing.
@@ -174,7 +174,7 @@ def ndonors_to_delta(int[:] nd) -> int[:] :
             continue
         delta[i] = delta[i + 1] - nd[i]
 
-    return delta    
+    return delta
 
 @cython.boundscheck(False)  # Deactivate bounds checking
 @cython.wraparound(False)   # Deactivate negative indexing.
@@ -202,16 +202,16 @@ def make_donor_array(cnp.int64_t[:] r, int[:] delta) -> int[:] :
         D[delta[r[i]] + w[r[i]]] = i
         w[r[i]] += 1
 
-    return D 
-     
+    return D
+
 @cython.boundscheck(False)  # Deactivate bounds checking
 @cython.wraparound(False)   # Deactivate negative indexing.
 def build_ordered_list_iterative(cnp.int64_t[:] receivers, cnp.ndarray[cnp.int64_t, ndim=1] baselevel_nodes) -> int[:] :
     """
     Builds the ordered list of nodes in topological order, given the receiver array.
-    Starts at the baselevel nodes and works upstream in a wave building a 
+    Starts at the baselevel nodes and works upstream in a wave building a
     breadth-first search order of the nodes using a queue. This is much faster
-    than the recursive version. 
+    than the recursive version.
 
     Args:
         receivers: The receiver array (i.e., receiver[i] is the ID
@@ -251,7 +251,7 @@ def build_ordered_list_iterative(cnp.int64_t[:] receivers, cnp.ndarray[cnp.int64
 @cython.wraparound(False)   # Deactivate negative indexing.
 def accumulate_flow(
     cnp.int64_t[:] receivers,
-    int[:] ordered, 
+    int[:] ordered,
     cnp.ndarray[double, ndim=1] weights
 ):
     """
@@ -362,7 +362,7 @@ def count_distance_between(int up_node, int down_node, cnp.ndarray[cnp.int64_t, 
 @cython.boundscheck(False)  # Deactivate bounds checking
 @cython.wraparound(False)   # Deactivate negative indexing.
 def build_samplesite_graph(
-    cnp.int64_t[:] receivers, 
+    cnp.int64_t[:] receivers,
     cnp.ndarray[cnp.int64_t, ndim=1] baselevel_nodes,
     cnp.ndarray[cnp.int64_t, ndim=1] arr,
     dict[int, dict[str,object]] sample_dict,
@@ -370,10 +370,10 @@ def build_samplesite_graph(
     cnp.float64_t dy,
     ):
     """
-    Creates a map of subbasins, where each subbasin is assigned a unique ID from 0 (baselevel) to n (number of subbasins). 
-    Each subbasin has at its mouth a sample site node. 
+    Creates a map of subbasins, where each subbasin is assigned a unique ID from 0 (baselevel) to n (number of subbasins).
+    Each subbasin has at its mouth a sample site node.
 
-    Args: 
+    Args:
         receivers: The receiver array (i.e., receiver[i] is the ID
         of the node that receives the flow from the i'th node).
         baselevel_nodes: The baselevel nodes to start from (i.e., sink-nodes).

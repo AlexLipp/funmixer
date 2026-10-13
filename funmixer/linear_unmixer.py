@@ -140,7 +140,7 @@ first two.
 import time
 import warnings
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Union
 
 import cvxpy as cp
 import networkx as nx
@@ -228,26 +228,26 @@ class LinearFunmixerSolution:
     objective_value: float
     solver_name: str
     total_time: float
-    solve_time: Optional[float]
-    setup_time: Optional[float]
+    solve_time: float | None
+    setup_time: float | None
     downstream_preds: ElementData
     upstream_preds: ElementData
-    node_order: List[str]
+    node_order: list[str]
     regularization_strength: float
     weighted: bool
     unconstrained_preds: ElementData
-    clamped_nodes: List[str]
+    clamped_nodes: list[str]
     amplification: ElementData
     condition_number: float
     residual_norm: float
-    upstream_covariance: Optional[FloatArray] = None
-    upstream_std: Optional[ElementData] = None
-    upstream_posterior_covariance: Optional[FloatArray] = None
-    upstream_posterior_std: Optional[ElementData] = None
-    downstream_covariance: Optional[FloatArray] = None
-    downstream_std: Optional[ElementData] = None
-    resolution_matrix: Optional[FloatArray] = None
-    effective_dof: Optional[float] = None
+    upstream_covariance: FloatArray | None = None
+    upstream_std: ElementData | None = None
+    upstream_posterior_covariance: FloatArray | None = None
+    upstream_posterior_std: ElementData | None = None
+    downstream_covariance: FloatArray | None = None
+    downstream_std: ElementData | None = None
+    resolution_matrix: FloatArray | None = None
+    effective_dof: float | None = None
 
 
 class LinearSampleNetworkUnmixer:
@@ -276,7 +276,7 @@ class LinearSampleNetworkUnmixer:
         self,
         sample_network: nx.DiGraph,
         use_regularization: bool = True,
-        rate_constants: Optional[RateConstantData] = None,
+        rate_constants: RateConstantData | None = None,
     ) -> None:
         """
         Initialise the LinearSampleNetworkUnmixer.
@@ -289,10 +289,10 @@ class LinearSampleNetworkUnmixer:
                 the dict default to 0 (conservative behaviour). Can be overridden per-solve.
         """
         self.sample_network = sample_network
-        self.node_order: List[str] = [
+        self.node_order: list[str] = [
             name for name, _ in nx_topological_sort_with_data(sample_network)
         ]
-        self._index: Dict[str, int] = {name: i for i, name in enumerate(self.node_order)}
+        self._index: dict[str, int] = {name: i for i, name in enumerate(self.node_order)}
         self._n: int = len(self.node_order)
         if self._n == 0:
             raise ValueError("Cannot unmix an empty sample network.")
@@ -308,20 +308,20 @@ class LinearSampleNetworkUnmixer:
         self._rltv_area: FloatArray = areas / float(np.mean(areas))
 
         self._use_regularization = use_regularization
-        self._rate_constants: Optional[RateConstantData] = rate_constants
+        self._rate_constants: RateConstantData | None = rate_constants
 
         # State from the most recent solve, used by get_misfit / get_roughness / get_estimator.
-        self._M: Optional[FloatArray] = None
-        self._R: Optional[FloatArray] = None
-        self._c_norm: Optional[FloatArray] = None
-        self._d_norm: Optional[FloatArray] = None
-        self._M_solver: Optional[FloatArray] = None
-        self._d_solver: Optional[FloatArray] = None
+        self._M: FloatArray | None = None
+        self._R: FloatArray | None = None
+        self._c_norm: FloatArray | None = None
+        self._d_norm: FloatArray | None = None
+        self._M_solver: FloatArray | None = None
+        self._d_solver: FloatArray | None = None
         self._weighted: bool = False
 
         # The compiled CVXPY problem, and the mixing matrix it was compiled for.
-        self._problem: Optional[cp.Problem] = None
-        self._problem_M: Optional[FloatArray] = None
+        self._problem: cp.Problem | None = None
+        self._problem_M: FloatArray | None = None
 
     # ------------------------------------------------------------------ helpers
 
@@ -368,9 +368,9 @@ class LinearSampleNetworkUnmixer:
 
     def _build_mixing_matrix(
         self,
-        export_rates: Optional[ExportRateData],
-        rate_constants: Optional[RateConstantData],
-    ) -> Tuple[FloatArray, FloatArray, FloatArray]:
+        export_rates: ExportRateData | None,
+        rate_constants: RateConstantData | None,
+    ) -> tuple[FloatArray, FloatArray, FloatArray]:
         """
         Build the mixing matrix `M`, and the total (`Q`) and own (`q`) fluxes of each site.
 
@@ -419,7 +419,7 @@ class LinearSampleNetworkUnmixer:
         d_norm: FloatArray,
         total_flux: FloatArray,
         own_flux: FloatArray,
-        rate_constants: Optional[RateConstantData],
+        rate_constants: RateConstantData | None,
     ) -> FloatArray:
         """
         Exact O(n + edges) solution of `M c = d` using the sparse closed form for `M^-1`.
@@ -468,7 +468,7 @@ class LinearSampleNetworkUnmixer:
         return np.linalg.solve(factor, np.eye(n))
 
     def _build_estimator(
-        self, M: FloatArray, lam: float, whitener: Optional[FloatArray]
+        self, M: FloatArray, lam: float, whitener: FloatArray | None
     ) -> FloatArray:
         """
         Build the linear estimator `R` such that `c_hat = R d`.
@@ -505,7 +505,7 @@ class LinearSampleNetworkUnmixer:
 
     def _coerce_data_covariance(
         self, data_covariance: DataCovariance, d: FloatArray
-    ) -> Optional[FloatArray]:
+    ) -> FloatArray | None:
         """
         Normalise the many accepted spellings of `data_covariance` into an (n, n) matrix.
 
@@ -556,9 +556,9 @@ class LinearSampleNetworkUnmixer:
     def solve(
         self,
         observation_data: ElementData,
-        export_rates: Optional[ExportRateData] = None,
-        rate_constants: Optional[RateConstantData] = None,
-        regularization_strength: Optional[float] = None,
+        export_rates: ExportRateData | None = None,
+        rate_constants: RateConstantData | None = None,
+        regularization_strength: float | None = None,
         data_covariance: DataCovariance = None,
         weighted: bool = True,
         solver: str = "clarabel",
@@ -640,7 +640,7 @@ class LinearSampleNetworkUnmixer:
         # trades a chi-squared-like misfit against the variance of the model.
         C_d = self._coerce_data_covariance(data_covariance, d)
         is_weighted = weighted and C_d is not None
-        whitener: Optional[FloatArray] = None
+        whitener: FloatArray | None = None
         if is_weighted:
             assert C_d is not None
             whitener = self._whitener(C_d / d_bar**2)
@@ -648,9 +648,7 @@ class LinearSampleNetworkUnmixer:
         # The unconstrained estimate. At lambda = 0 the sparse closed form is both exact and
         # O(n); otherwise we go via R, which we need for the covariance anyway.
         need_estimator = (C_d is not None) or compute_resolution or lam > 0.0
-        R: Optional[FloatArray] = (
-            self._build_estimator(M, lam, whitener) if need_estimator else None
-        )
+        R: FloatArray | None = self._build_estimator(M, lam, whitener) if need_estimator else None
         if lam == 0.0:
             c_unconstrained = self._solve_unregularized(
                 d_norm, total_flux, own_flux, rate_constants
@@ -712,12 +710,12 @@ class LinearSampleNetworkUnmixer:
         # Error propagation. The estimator maps observations to concentrations in *any*
         # consistent scaling, so the mean-normalisation cancels exactly and we can work
         # directly in the input units: C_c = R C_d R^T, C_dpred = M C_c M^T.
-        upstream_covariance: Optional[FloatArray] = None
-        upstream_std: Optional[ElementData] = None
-        downstream_covariance: Optional[FloatArray] = None
-        downstream_std: Optional[ElementData] = None
-        upstream_posterior_covariance: Optional[FloatArray] = None
-        upstream_posterior_std: Optional[ElementData] = None
+        upstream_covariance: FloatArray | None = None
+        upstream_std: ElementData | None = None
+        downstream_covariance: FloatArray | None = None
+        downstream_std: ElementData | None = None
+        upstream_posterior_covariance: FloatArray | None = None
+        upstream_posterior_std: ElementData | None = None
         if C_d is not None:
             assert R is not None
             upstream_covariance = _symmetrise(R @ C_d @ R.T)
@@ -738,8 +736,8 @@ class LinearSampleNetworkUnmixer:
                     np.sqrt(np.clip(np.diag(upstream_posterior_covariance), 0, None))
                 )
 
-        resolution_matrix: Optional[FloatArray] = None
-        effective_dof: Optional[float] = None
+        resolution_matrix: FloatArray | None = None
+        effective_dof: float | None = None
         if compute_resolution:
             assert R is not None
             resolution_matrix = R @ M
@@ -804,13 +802,13 @@ class LinearSampleNetworkUnmixer:
             raise Exception("No solution available: call solve() first.")
         return float(np.linalg.norm(self._c_norm - np.mean(self._c_norm)))
 
-    def get_mixing_matrix(self) -> Tuple[FloatArray, List[str]]:
+    def get_mixing_matrix(self) -> tuple[FloatArray, list[str]]:
         """Return the mixing matrix `M` of the most recent solve, and its node ordering."""
         if self._M is None:
             raise Exception("No solution available: call solve() first.")
         return self._M, list(self.node_order)
 
-    def get_estimator(self) -> Tuple[FloatArray, List[str]]:
+    def get_estimator(self) -> tuple[FloatArray, list[str]]:
         """
         Return the linear estimator `R` of the most recent solve, and its node ordering.
 

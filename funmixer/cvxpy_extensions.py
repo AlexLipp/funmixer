@@ -1,5 +1,3 @@
-from typing import Optional
-
 import cvxpy as cp
 
 
@@ -27,7 +25,7 @@ class ReciprocalParameter:
         self._rp = cp.Parameter(*args, **kwargs)
 
     @property
-    def value(self) -> Optional[float]:
+    def value(self) -> float | None:
         """
         Get the value of the ReciprocalParameter.
 
@@ -37,7 +35,7 @@ class ReciprocalParameter:
         return self._p.value
 
     @value.setter
-    def value(self, val: Optional[float]) -> None:
+    def value(self, val: float | None) -> None:
         """
         Set the value of the ReciprocalParameter and its reciprocal.
 

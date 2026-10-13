@@ -30,8 +30,8 @@ Run from the repository root:
 """
 
 import warnings
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional
 
 # pyre-fixme[21]: Could not find module `matplotlib.pyplot`.
 import matplotlib.pyplot as plt
@@ -100,7 +100,7 @@ class Score:
         cls,
         predicted: funmixer.ElementData,
         truth: funmixer.ElementData,
-        interior: Optional[np.ndarray] = None,
+        interior: np.ndarray | None = None,
     ) -> "Score":
         keys = list(truth)
         true_values = np.array([truth[k] for k in keys])
@@ -127,7 +127,7 @@ class Score:
 
 
 def best_over_lambda(
-    solve_for_lambda: Callable[[float], Optional[funmixer.ElementData]],
+    solve_for_lambda: Callable[[float], funmixer.ElementData | None],
     truth: funmixer.ElementData,
     lambdas: np.ndarray,
     interior: np.ndarray,
@@ -139,7 +139,7 @@ def best_over_lambda(
     for every solver, and it isolates what we actually want to measure: the best each method
     can possibly do, rather than how well some particular lambda-selection heuristic works.
     """
-    best: Optional[Score] = None
+    best: Score | None = None
     for lam in lambdas:
         predictions = solve_for_lambda(float(lam))
         if predictions is None:
@@ -152,7 +152,7 @@ def best_over_lambda(
     return best
 
 
-def run_trial(orders: float, seed: int) -> Dict[str, Score]:
+def run_trial(orders: float, seed: int) -> dict[str, Score]:
     """Generate one synthetic dataset and invert it every way we know how."""
     network = build_network(N_SITES, AREA_VARIATION, seed)
     truth = draw_sources(network, orders, seed)
@@ -167,7 +167,7 @@ def run_trial(orders: float, seed: int) -> Dict[str, Score]:
     sigmas = {node: RELATIVE_ERROR * value for node, value in observed.items()}
     interior = np.array([network.in_degree(node) > 0 for node in truth], dtype=bool)
 
-    scores: Dict[str, Score] = {}
+    scores: dict[str, Score] = {}
 
     linear_unreg = LinearSampleNetworkUnmixer(network, use_regularization=False)
     scores["linear, lambda=0"] = Score.compare(
@@ -176,17 +176,21 @@ def run_trial(orders: float, seed: int) -> Dict[str, Score]:
 
     linear = LinearSampleNetworkUnmixer(network, use_regularization=True)
     scores["linear, weighted"] = best_over_lambda(
-        lambda lam: linear.solve(
-            observed, regularization_strength=lam, data_covariance=sigmas, weighted=True
-        ).upstream_preds,
+        lambda lam: (
+            linear.solve(
+                observed, regularization_strength=lam, data_covariance=sigmas, weighted=True
+            ).upstream_preds
+        ),
         truth,
         LAMBDA_GRID,
         interior,
     )
     scores["linear, unweighted"] = best_over_lambda(
-        lambda lam: linear.solve(
-            observed, regularization_strength=lam, data_covariance=sigmas, weighted=False
-        ).upstream_preds,
+        lambda lam: (
+            linear.solve(
+                observed, regularization_strength=lam, data_covariance=sigmas, weighted=False
+            ).upstream_preds
+        ),
         truth,
         LAMBDA_GRID,
         interior,
@@ -199,7 +203,7 @@ def run_trial(orders: float, seed: int) -> Dict[str, Score]:
 
     nonlinear = funmixer.SampleNetworkUnmixer(network, use_regularization=True)
 
-    def solve_nonlinear(lam: float) -> Optional[funmixer.ElementData]:
+    def solve_nonlinear(lam: float) -> funmixer.ElementData | None:
         try:
             return nonlinear.solve(observed, regularization_strength=lam).upstream_preds
         except Exception:
@@ -211,7 +215,7 @@ def run_trial(orders: float, seed: int) -> Dict[str, Score]:
     return scores
 
 
-METHODS: List[str] = [
+METHODS: list[str] = [
     "linear, lambda=0",
     "linear, unweighted",
     "linear, weighted",
@@ -228,7 +232,7 @@ def main() -> None:
         "Score is the median factor-of error: 10^median|log10(pred/true)|.\n"
     )
 
-    results: Dict[str, Dict[float, List[Score]]] = {
+    results: dict[str, dict[float, list[Score]]] = {
         m: {o: [] for o in ORDERS_OF_MAGNITUDE} for m in METHODS
     }
     for orders in ORDERS_OF_MAGNITUDE:

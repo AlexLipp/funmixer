@@ -172,7 +172,14 @@ finding, not flakiness — check whether it is a solver tolerance issue before c
 `tests/runtime_benchmark.py` imports from `random_networks_test` by module name, so it must be
 invoked as a script from the repo root (which puts `tests/` on `sys.path`), not via pytest.
 
-Formatting: `black --line-length=100`, enforced by `.pre-commit-config.yaml`. Several files carry
+Linting and formatting: `ruff check --fix .` and `ruff format .` (line length 100, config in
+`pyproject.toml`). Ruff is deliberately **not** in the pre-commit hook.
+
+**This is a legacy project.** Historical code predates the ruff rule set and does not satisfy it
+perfectly: `ruff check` reports ~200 pre-existing violations (mostly long lines, legacy
+`np.random` calls, `zip()` without `strict=`). That is expected. Hold new and edited code to
+the rules, but don't clean up untouched historical code incidentally, and don't add an `ignore`
+list to silence it. Several files carry
 `# fmt: off` / `# fmt: skip` (notably `ELEMENT_LIST`) — preserve them. The codebase is annotated for
 `pyre`; `# pyre-fixme` comments are expected and should not be cleaned up incidentally.
 

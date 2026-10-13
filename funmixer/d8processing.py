@@ -2,13 +2,13 @@
 This module contains functions for (pre)processing D8 flow direction grids and snapping sample sites to drainage networks.
 """
 
-from osgeo import gdal, gdal_array
 from pathlib import Path
+
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 import pandas as pd
-from typing import Tuple, List, Dict
+from osgeo import gdal, gdal_array
 
 import funmixer.flow_acc_cfuncs as cf
 from funmixer.network_unmixer import SampleNode
@@ -16,7 +16,7 @@ from funmixer.network_unmixer import SampleNode
 D8_VALUES = {0, 1, 2, 4, 8, 16, 32, 64, 128}
 
 
-def read_geo_file(filename: str) -> Tuple[np.ndarray, gdal.Dataset]:
+def read_geo_file(filename: str) -> tuple[np.ndarray, gdal.Dataset]:
     """Reads a geospatial file"""
     # Open the file with GDAL
     ds = gdal.Open(filename)
@@ -74,7 +74,7 @@ def check_d8(
     values_are_valid = unique_values == D8_VALUES
     if not values_are_valid:
         print(
-            f"VALUE CHECK RESULT: Fail. Invalid values present in D8 flow direction grid: {unique_values}. \n Expected values are { D8_VALUES }"
+            f"VALUE CHECK RESULT: Fail. Invalid values present in D8 flow direction grid: {unique_values}. \n Expected values are {D8_VALUES}"
         )
     else:
         print("VALUE CHECK RESULT: Pass.")
@@ -125,7 +125,7 @@ def snap_to_drainage(
     drainage_area_threshold: float,
     plot: bool = True,
     save: bool = False,
-    nudges: Dict[str, np.ndarray] = {},
+    nudges: dict[str, np.ndarray] = {},
 ):
     """
     Function that snaps sample sites to the nearest drainage channel.
@@ -195,7 +195,6 @@ def snap_to_drainage(
         snapped[i] = nearest
     # Plot the network and the noisy, nudged and snapped samples
     if plot:
-
         CHANNEL_PIXEL_SCALER = 5  # Size of channel pixels in the plot
         CHANNEL_PIXEL_MIN_SIZE = 0.05  # Ensures smallest area is not too small to see
 
@@ -387,7 +386,7 @@ class D8Accumulator:
         return self._ds
 
     @property
-    def extent(self) -> List[float]:
+    def extent(self) -> list[float]:
         """
         Get the extent of the array in the accumulator. Can be used for plotting.
         """
@@ -415,7 +414,7 @@ class D8Accumulator:
         if not isinstance(node, int) and not np.issubdtype(type(node), np.integer):
             raise TypeError("Node must be an integer")
 
-    def node_to_coord(self, node: int) -> Tuple[float, float]:
+    def node_to_coord(self, node: int) -> tuple[float, float]:
         """Converts a node index to a coordinate pair for the centre of the pixel"""
         self._check_valid_node(node)
         _, ncols = self.arr.shape
@@ -442,7 +441,7 @@ class D8Accumulator:
             raise ValueError("Coordinate is out of bounds")
         return out
 
-    def indices_to_coords(self, rows: np.ndarray, cols: np.ndarray) -> Tuple[np.ndarray]:
+    def indices_to_coords(self, rows: np.ndarray, cols: np.ndarray) -> tuple[np.ndarray]:
         """
         Convert column and row indices to x and y coordinates for the centre point of a pixel in the geospatial grid
 
@@ -463,7 +462,7 @@ class D8Accumulator:
 def get_sample_graph(
     flowdirs_filename: str,
     sample_data_filename: str,
-) -> Tuple[nx.DiGraph, np.ndarray]:
+) -> tuple[nx.DiGraph, np.ndarray]:
     """
     Function to build a directed graph of sample sites from a D8 flow direction grid and table of sample locations.
 

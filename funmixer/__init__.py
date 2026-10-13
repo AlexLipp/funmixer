@@ -1,5 +1,3 @@
-from .d8processing import *  # noqa: F403
-
 from .bdl_unmixer import (
     BDLElementData,
     BDLObservation,
@@ -7,6 +5,9 @@ from .bdl_unmixer import (
     get_bdl_element_obs,
     visualise_downstream_bdl,
 )
+
+# Star import (F403) is deliberate: it re-exports d8processing's whole public API unchanged.
+from .d8processing import *  # noqa: F403
 from .linear_unmixer import (
     LinearFunmixerSolution,
     LinearSampleNetworkUnmixer,
@@ -31,26 +32,26 @@ from .network_unmixer import (
 )
 
 __all__ = [
+    "ELEMENT_LIST",
     "BDLElementData",
     "BDLObservation",
     "BDLSampleNetworkUnmixer",
     "ElementData",
-    "ELEMENT_LIST",
     "FunmixerSolution",
-    "get_bdl_element_obs",
     "LinearFunmixerSolution",
     "LinearSampleNetworkUnmixer",
+    "SampleNetworkUnmixer",
+    "SampleNode",
+    "forward_model",
+    "get_bdl_element_obs",
     "get_element_obs",
     "get_unique_upstream_areas",
     "get_upstream_concentration_map",
-    "forward_model",
     "mix_downstream",
     "nx_get_downstream_data",
     "nx_get_downstream_node",
     "plot_network",
-    "SampleNode",
     "plot_sweep_of_regularizer_strength",
-    "SampleNetworkUnmixer",
     "visualise_downstream",
     "visualise_downstream_bdl",
 ]

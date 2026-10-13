@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """
-This script demonstrates the preprocessing capabilities of funmixer. Specifically: 
+This script demonstrates the preprocessing capabilities of funmixer. Specifically:
 1. Checking that a D8 flow direction raster is correctly formatted for use in funmixer
-2. Fixing a D8 raster that has incorrect boundary conditions 
+2. Fixing a D8 raster that has incorrect boundary conditions
 3. Snapping sample sites to the nearest drainage network
 """
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 
 from funmixer import (
     check_d8,
@@ -13,15 +17,11 @@ from funmixer import (
     set_d8_boundaries_to_zero,
     snap_to_drainage,
 )
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
 
 ### Checking D8 flow directions and fixing boundary conditions ###
 # The check_d8 function checks two things.
 # 1. if the flow-direction values are the expected values e.g., 0, 1, 2, 4, 8, 16, 32, 64, 128
 # 2. if the boundary conditions are correct, i.e., all boundary cells are sinks (0's)
-# The example file "d8_bad_bounds.tif" has correct values but incorrect boundary conditions.
 # We can test this using the check_d8 function.
 
 check_d8("data/cairngorms_d8_badbounds.tif")

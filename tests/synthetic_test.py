@@ -72,14 +72,10 @@ def main() -> None:
     #  bytes, complex, float, int, str]], bool, bytes, complex, float, int, str]` but got
     #  `List[float]`.
     if np.allclose(down_preds, down_obs, rtol=tolerance):
-        print(
-            "SUCCESS: Downstream concentrations match to within tolerance of {}%".format(tolerance)
-        )
+        print(f"SUCCESS: Downstream concentrations match to within tolerance of {tolerance}%")
     else:
         raise AssertionError(
-            "WARNING: Inputted and recovered downstream concentrations do not match with tolerance of {}%".format(
-                tolerance
-            )
+            f"WARNING: Inputted and recovered downstream concentrations do not match with tolerance of {tolerance}%"
         )
     # Assert up_preds and up_obs contain equal values within a tolerance
     # pyre-fixme[6]: For 1st argument expected `Union[_SupportsArray[dtype[typing.Any]],
@@ -91,12 +87,10 @@ def main() -> None:
     #  bytes, complex, float, int, str]], bool, bytes, complex, float, int, str]` but got
     #  `List[typing.Any]`.
     if np.allclose(up_preds, up_obs, rtol=tolerance):
-        print("SUCCESS: Upstream concentrations match to within tolerance of {}%".format(tolerance))
+        print(f"SUCCESS: Upstream concentrations match to within tolerance of {tolerance}%")
     else:
         raise AssertionError(
-            "WARNING: Inputted and recovered upstream concentrations do not match with tolerance of {}%".format(
-                tolerance
-            )
+            f"WARNING: Inputted and recovered upstream concentrations do not match with tolerance of {tolerance}%"
         )
 
     print("SUCCESS: All tests passed!")

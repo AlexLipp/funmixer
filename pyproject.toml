@@ -4,3 +4,22 @@ build-backend = "setuptools.build_meta"
 
 [tool.pytest.ini_options]
 norecursedirs = "submodules/*"
+[tool.ruff]
+# 100 rather than 88 to match the line length the codebase was already formatted to with black.
+line-length = 100
+target-version = "py311"
+# Personal scratch files, not project code.
+extend-exclude = ["working.ipynb", "working.py"]
+
+[tool.ruff.lint]
+select = [
+  "E", "F",      # pycodestyle + pyflakes
+  "I",           # isort — import order
+  "UP",          # pyupgrade — modern syntax
+  "B",           # bugbear — common bug patterns
+  "SIM",         # simplify — redundant code
+  "C4",          # comprehension cleanups
+  "NPY",         # numpy-specific gotchas
+  "PTH",         # use pathlib over os.path
+  "RUF",         # ruff's own extra checks
+]

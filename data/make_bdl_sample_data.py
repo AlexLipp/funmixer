@@ -28,7 +28,6 @@ Run from the repository root:
 import math
 import sys
 from pathlib import Path
-from typing import List, Optional
 
 import numpy as np
 import pandas as pd
@@ -37,7 +36,7 @@ import pandas as pd
 # there. Add it, so the script works whether or not funmixer has been `pip install -e .`d.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from funmixer import ELEMENT_LIST  # noqa: E402  (import follows the sys.path fix above)
+from funmixer import ELEMENT_LIST
 
 # Percentiles at which the two detection limits for each element are placed. Values below the
 # lower percentile are censored at the lower limit; values between the two are censored at the
@@ -81,7 +80,7 @@ def censor_column(
     lower_percentile: float = LOWER_PERCENTILE,
     upper_percentile: float = UPPER_PERCENTILE,
     min_valid_values: int = MIN_VALID_VALUES,
-) -> Optional[pd.Series]:
+) -> pd.Series | None:
     """
     Replace the lowest values of one element column with censored "<X" strings.
 
@@ -102,7 +101,7 @@ def censor_column(
     lower_limit = round_up_to_sig_figs(float(np.percentile(valid, lower_percentile)))
     upper_limit = round_up_to_sig_figs(float(np.percentile(valid, upper_percentile)))
 
-    def censor(value: float) -> Optional[str]:
+    def censor(value: float) -> str | None:
         if pd.isna(value):
             return None
         if value < lower_limit:
@@ -119,7 +118,7 @@ def make_bdl_dataset(
     output_path: Path,
     lower_percentile: float = LOWER_PERCENTILE,
     upper_percentile: float = UPPER_PERCENTILE,
-) -> List[str]:
+) -> list[str]:
     """
     Write a censored copy of a sample-data CSV.
 
@@ -151,7 +150,7 @@ def make_bdl_dataset(
     text = pd.read_csv(source_path, dtype=str, keep_default_na=False)
     numeric = pd.read_csv(source_path)
 
-    censored_columns: List[str] = []
+    censored_columns: list[str] = []
     for element in ELEMENT_LIST:
         if element not in text.columns:
             continue

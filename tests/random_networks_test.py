@@ -1,7 +1,7 @@
 # pyre-ignore-all-errors[56]
 
 import math
-from typing import Callable, Optional
+from collections.abc import Callable
 
 import networkx as nx
 import numpy as np
@@ -69,7 +69,7 @@ def size_of_balanced_tree(r: int, h: int) -> int:
 
 
 def generate_random_sample_network(
-    N: int, areas: Callable[[], float], seed: Optional[int] = None
+    N: int, areas: Callable[[], float], seed: int | None = None
 ) -> nx.DiGraph:
     """
     Generate a random sample network with n nodes with a random area.
@@ -237,7 +237,7 @@ def test_balanced_network(
         branching_factor=branching_factor, height=height, areas=areas
     )
     upstream = conc_list_to_dict(network, concentrations)
-    rate_constants = None if conservative else {node: rate_constant for node in network.nodes}
+    rate_constants = None if conservative else dict.fromkeys(network.nodes, rate_constant)
     downstream = funmixer.forward_model(
         sample_network=network, upstream_concentrations=upstream, rate_constants=rate_constants
     )
@@ -289,7 +289,7 @@ def test_rary_network(
     concentrations = lambda: draw_random_log_uniform(min_conc, max_conc)
     network = generate_r_ary_sample_network(N=N, branching_factor=branching_factor, areas=areas)
     upstream = conc_list_to_dict(network, concentrations)
-    rate_constants = None if conservative else {node: rate_constant for node in network.nodes}
+    rate_constants = None if conservative else dict.fromkeys(network.nodes, rate_constant)
     downstream = funmixer.forward_model(
         sample_network=network, upstream_concentrations=upstream, rate_constants=rate_constants
     )
