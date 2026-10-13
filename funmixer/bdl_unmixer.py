@@ -29,7 +29,7 @@ a well-posed answer, which is why `use_regularization=False` raises a warning he
 
 import warnings
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import cvxpy as cp
 import matplotlib.pyplot as plt
@@ -89,7 +89,7 @@ class BDLObservation:
 
 
 # Mapping of sample name to a possibly-censored observation.
-BDLElementData = Dict[str, BDLObservation]
+BDLElementData = dict[str, BDLObservation]
 
 
 def cp_bdl_log_ratio(a: cp.Variable, b: ReciprocalParameter) -> cp.Expression:
@@ -109,7 +109,7 @@ def cp_bdl_log_ratio(a: cp.Variable, b: ReciprocalParameter) -> cp.Expression:
     return cp.maximum(1.0, a * b.rp)
 
 
-def parse_bdl_value(raw: Any, sample_name: str = "<unknown>") -> Optional[BDLObservation]:
+def parse_bdl_value(raw: Any, sample_name: str = "<unknown>") -> BDLObservation | None:
     """
     Parses one cell of a tracer column into a `BDLObservation`.
 
@@ -200,7 +200,7 @@ class BDLSampleNetworkUnmixer(SampleNetworkUnmixer):
         sample_network: nx.DiGraph,
         observation_data: BDLElementData,
         use_regularization: bool = True,
-        rate_constants: Optional[RateConstantData] = None,
+        rate_constants: RateConstantData | None = None,
     ) -> None:
         """
         Initialize the BDLSampleNetworkUnmixer class.
@@ -227,7 +227,7 @@ class BDLSampleNetworkUnmixer(SampleNetworkUnmixer):
 
         # NOTE: this must be assigned *before* `super().__init__()`. The base constructor
         # calls `_build_primary_terms`, which calls `_misfit_term`, which reads this mapping.
-        self._is_bdl: Dict[str, bool] = {site: obs.is_bdl for site, obs in observation_data.items()}
+        self._is_bdl: dict[str, bool] = {site: obs.is_bdl for site, obs in observation_data.items()}
 
         if not use_regularization and any(self._is_bdl.values()):
             warnings.warn(
@@ -379,10 +379,10 @@ def visualise_downstream_bdl(
     if not obs_dict:
         raise ValueError("No observations to plot: `obs_dict` is empty.")
 
-    detected_obs: List[float] = []
-    detected_pred: List[float] = []
-    censored_limits: List[float] = []
-    censored_pred: List[float] = []
+    detected_obs: list[float] = []
+    detected_pred: list[float] = []
+    censored_limits: list[float] = []
+    censored_pred: list[float] = []
     for sample, obs in obs_dict.items():
         if obs.is_bdl:
             censored_limits.append(obs.value)

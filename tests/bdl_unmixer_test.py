@@ -14,16 +14,6 @@ import pandas as pd
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
-
-import funmixer
-from funmixer.bdl_unmixer import (
-    BDLObservation,
-    BDLSampleNetworkUnmixer,
-    cp_bdl_log_ratio,
-    get_bdl_element_obs,
-    parse_bdl_value,
-)
-from funmixer.network_unmixer import geo_mean
 from random_networks_test import (
     MAXIMUM_AREA,
     MAXIMUM_BRANCHING_FACTOR,
@@ -38,6 +28,16 @@ from random_networks_test import (
     generate_balanced_sample_network,
     generate_r_ary_sample_network,
 )
+
+import funmixer
+from funmixer.bdl_unmixer import (
+    BDLObservation,
+    BDLSampleNetworkUnmixer,
+    cp_bdl_log_ratio,
+    get_bdl_element_obs,
+    parse_bdl_value,
+)
+from funmixer.network_unmixer import geo_mean
 
 # Regularization strength used where a well-posed censored solution is needed. Small enough
 # that the data misfit dominates, matching the value used in the example scripts.

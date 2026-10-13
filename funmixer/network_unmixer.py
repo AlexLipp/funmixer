@@ -5,18 +5,12 @@ import os
 import tempfile
 import time
 from collections import defaultdict
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import (
     Any,
-    DefaultDict,
-    Dict,
     Final,
-    Iterator,
-    List,
-    Optional,
-    Tuple,
     TypeVar,
-    Union,
     cast,
 )
 
@@ -34,20 +28,21 @@ import numpy.typing as npt
 import pandas as pd
 import tqdm
 
-from .cvxpy_extensions import ReciprocalParameter, cp_log_ratio
 import funmixer.flow_acc_cfuncs as cf
 
-NO_DOWNSTREAM: Final[int] = 0
-ELEMENT_LIST: Final[List[str]] = ["H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne", "Na", "Mg", "Al", "Si", "P", "S", "Cl", "Ar", "K", "Ca", "Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn", "Ga", "Ge", "As", "Se", "Br", "Kr", "Rb", "Sr", "Y", "Zr", "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag", "Cd", "In", "Sn", "Sb", "Te", "I", "Xe", "Cs", "Ba", "La", "Ce", "Pr", "Nd", "Pm", "Sm", "Eu", "Gd", "Tb", "Dy", "Ho", "Er", "Tm", "Yb", "Lu", "Hf", "Ta", "W", "Re", "Os", "Ir", "Pt", "Au", "Hg", "Tl", "Pb", "Bi", "Po", "At", "Rn", "Fr", "Ra", "Ac", "Th", "Pa", "U", "Np", "Pu", "Am", "Cm", "Bk", "Cf", "Es", "Fm", "Md", "No", "Lr", "Rf", "Db", "Sg", "Bh", "Hs", "Mt", "Ds", "Rg", "Cn", "Uut", "Fl", "Uup", "Lv", "Uus", "Uuo"]  # fmt: skip
+from .cvxpy_extensions import ReciprocalParameter, cp_log_ratio
 
-ElementData = Dict[str, float]
-ExportRateData = Dict[str, float]
-RateConstantData = Dict[str, float]
+NO_DOWNSTREAM: Final[int] = 0
+ELEMENT_LIST: Final[list[str]] = ["H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne", "Na", "Mg", "Al", "Si", "P", "S", "Cl", "Ar", "K", "Ca", "Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn", "Ga", "Ge", "As", "Se", "Br", "Kr", "Rb", "Sr", "Y", "Zr", "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag", "Cd", "In", "Sn", "Sb", "Te", "I", "Xe", "Cs", "Ba", "La", "Ce", "Pr", "Nd", "Pm", "Sm", "Eu", "Gd", "Tb", "Dy", "Ho", "Er", "Tm", "Yb", "Lu", "Hf", "Ta", "W", "Re", "Os", "Ir", "Pt", "Au", "Hg", "Tl", "Pb", "Bi", "Po", "At", "Rn", "Fr", "Ra", "Ac", "Th", "Pa", "U", "Np", "Pu", "Am", "Cm", "Bk", "Cf", "Es", "Fm", "Md", "No", "Lr", "Rf", "Db", "Sg", "Bh", "Hs", "Mt", "Ds", "Rg", "Cn", "Uut", "Fl", "Uup", "Lv", "Uus", "Uuo"]  # fmt: skip
+
+ElementData = dict[str, float]
+ExportRateData = dict[str, float]
+RateConstantData = dict[str, float]
 
 T = TypeVar("T")
 
 
-def not_none(x: Optional[T]) -> T:
+def not_none(x: T | None) -> T:
     assert x is not None
     return x
 
@@ -80,19 +75,19 @@ class SampleNode:
     name: str
     x: int
     y: int
-    downstream_node: Optional[str]
-    upstream_nodes: List[str]
+    downstream_node: str | None
+    upstream_nodes: list[str]
     area: float
     total_upstream_area: float
     distance_downstream: float
     label: int
-    my_flux: Optional[Union[float, cp.Expression]] = None
-    my_total_flux: Union[float, cp.Expression] = 0.0
-    my_total_tracer_flux: Union[float, cp.Expression] = 0.0
-    my_tracer_flux: Optional[cp.Expression] = None
-    my_tracer_value: Optional[cp.Expression] = None
+    my_flux: float | cp.Expression | None = None
+    my_total_flux: float | cp.Expression = 0.0
+    my_total_tracer_flux: float | cp.Expression = 0.0
+    my_tracer_flux: cp.Expression | None = None
+    my_tracer_value: cp.Expression | None = None
     rltv_area: float = -np.inf  # Obviously bad value
-    total_flux: Optional[cp.Expression] = None
+    total_flux: cp.Expression | None = None
     my_export_rate: cp.Parameter = field(default_factory=lambda: cp.Parameter(pos=True))
     my_rate_constant: float = 0.0
 
@@ -117,7 +112,7 @@ class DownstreamNode:
     data: SampleNode
 
 
-def nx_items(sample_network: nx.DiGraph) -> Iterator[Tuple[str, SampleNode]]:
+def nx_items(sample_network: nx.DiGraph) -> Iterator[tuple[str, SampleNode]]:
     for node, data in sample_network.nodes(data=True):
         yield node, data["data"]
 
@@ -131,7 +126,7 @@ def nx_values(sample_network: nx.DiGraph) -> Iterator[SampleNode]:
 # ECOS, SCS, ClARABEL, GUROBI, SCIP
 # See: https://www.cvxpy.org/tutorial/advanced/index.html#choosing-a-solver
 # See: https://www.cvxpy.org/tutorial/advanced/index.html#setting-solver-options
-SOLVERS: Dict[str, Any] = {
+SOLVERS: dict[str, Any] = {
     # VERY SLOW, probably don't use
     "scip": {
         "solver": cp.SCIP,
@@ -162,13 +157,13 @@ class FunmixerSolution:
     objective_value: float
     solver_name: str
     total_time: float
-    solve_time: Optional[float]
-    setup_time: Optional[float]
+    solve_time: float | None
+    setup_time: float | None
     downstream_preds: ElementData
     upstream_preds: ElementData
 
 
-def geo_mean(x: List[float]) -> float:
+def geo_mean(x: list[float]) -> float:
     """
     Returns the geometric mean of a list of numbers.
 
@@ -183,7 +178,7 @@ def geo_mean(x: List[float]) -> float:
 
 def nx_topological_sort_with_data(
     G: nx.DiGraph,
-) -> Iterator[Tuple[str, SampleNode]]:
+) -> Iterator[tuple[str, SampleNode]]:
     """
     Returns a topological sort of the graph, with the data of each node.
 
@@ -199,7 +194,7 @@ def nx_topological_sort_with_data(
     )
 
 
-def nx_get_downstream_node(G: nx.DiGraph, x: str) -> Optional[str]:
+def nx_get_downstream_node(G: nx.DiGraph, x: str) -> str | None:
     """
     Gets the name of the downstream child, if there is one.
 
@@ -213,7 +208,7 @@ def nx_get_downstream_node(G: nx.DiGraph, x: str) -> Optional[str]:
     Raises:
         Exception: If there is more than one downstream neighbor.
     """
-    s: List[str] = list(G.successors(x))
+    s: list[str] = list(G.successors(x))
     if len(s) == 0:
         return None
     elif len(s) == 1:
@@ -222,7 +217,7 @@ def nx_get_downstream_node(G: nx.DiGraph, x: str) -> Optional[str]:
         raise Exception("More than one downstream neighbour!")
 
 
-def nx_get_downstream_data(G: nx.DiGraph, x: str) -> Optional[SampleNode]:
+def nx_get_downstream_data(G: nx.DiGraph, x: str) -> SampleNode | None:
     """
     Gets data from the downstream child, if there is one
 
@@ -237,8 +232,12 @@ def nx_get_downstream_data(G: nx.DiGraph, x: str) -> Optional[SampleNode]:
         Exception: If there is more than one downstream neighbor.
     """
     s = nx_get_downstream_node(G, x)
-    if s:
+    # NB: an explicit `is not None` check, not a truthiness test. Node names may be integers,
+    # and a node legitimately named `0` would otherwise be reported as having no downstream
+    # neighbour -- silently disconnecting the outlet of any integer-labelled network.
+    if s is not None:
         return cast(SampleNode, G.nodes[s]["data"])
+    return None
 
 
 def plot_network(G: nx.DiGraph) -> None:
@@ -285,7 +284,7 @@ class SampleNetworkUnmixer:
         self,
         sample_network: nx.DiGraph,
         use_regularization: bool = True,
-        rate_constants: Optional[RateConstantData] = None,
+        rate_constants: RateConstantData | None = None,
     ) -> None:
         """
         Initialize the SampleNetworkUnmixer class.
@@ -297,17 +296,17 @@ class SampleNetworkUnmixer:
         """
 
         self.sample_network = sample_network
-        self._site_to_observation: Dict[str, ReciprocalParameter] = {}
-        self._site_to_export_rate: Dict[str, cp.Parameter] = {}
+        self._site_to_observation: dict[str, ReciprocalParameter] = {}
+        self._site_to_export_rate: dict[str, cp.Parameter] = {}
         # Maps site name to (alpha_param, downstream_distance). alpha = exp(-k * d) is a
         # DPP-compliant parameter updated at solve time, avoiding a rebuild when k changes.
-        self._site_to_alpha: Dict[str, Tuple[cp.Parameter, float]] = {}
-        self._site_to_total_flux: Dict[str, ReciprocalParameter] = {}
-        self._primary_terms: List[cp.Expression] = []
-        self._regularizer_terms: List[cp.Expression] = []
-        self._constraints: List[cp.Constraint] = []
+        self._site_to_alpha: dict[str, tuple[cp.Parameter, float]] = {}
+        self._site_to_total_flux: dict[str, ReciprocalParameter] = {}
+        self._primary_terms: list[cp.Expression] = []
+        self._regularizer_terms: list[cp.Expression] = []
+        self._constraints: list[cp.Constraint] = []
         self._regularizer_strength = cp.Parameter(nonneg=True)
-        self._problem: Optional[cp.Problem] = None
+        self._problem: cp.Problem | None = None
         # Geometric mean of the observations of the most recent solve, used to map results
         # back out of normalised units. Set by `_set_observation_parameters`.
         self._obs_geo_mean: float = 1.0
@@ -487,7 +486,7 @@ class SampleNetworkUnmixer:
         for x in self._site_to_observation.values():
             assert x.value is not None
 
-    def _set_export_rate_parameters(self, export_rates: Optional[ExportRateData] = None) -> None:
+    def _set_export_rate_parameters(self, export_rates: ExportRateData | None = None) -> None:
         """
         Reset and set the export rate parameters according to input export rates.
 
@@ -512,7 +511,7 @@ class SampleNetworkUnmixer:
             assert x.value is not None
 
     def _set_rate_constant_parameters(
-        self, rate_constants: Optional[RateConstantData] = None
+        self, rate_constants: RateConstantData | None = None
     ) -> None:
         """
         Set the alpha = exp(-k * d) parameters for each non-leaf edge.
@@ -554,9 +553,9 @@ class SampleNetworkUnmixer:
     def solve(
         self,
         observation_data: ElementData,
-        export_rates: Optional[ExportRateData] = None,
-        rate_constants: Optional[RateConstantData] = None,
-        regularization_strength: Optional[float] = None,
+        export_rates: ExportRateData | None = None,
+        rate_constants: RateConstantData | None = None,
+        regularization_strength: float | None = None,
         solver: str = "clarabel",
         warm_start: bool = False,
     ) -> FunmixerSolution:
@@ -669,12 +668,12 @@ class SampleNetworkUnmixer:
         observation_data: ElementData,
         relative_error: float,
         num_repeats: int,
-        export_rates: Optional[ExportRateData] = None,
-        rate_constants: Optional[RateConstantData] = None,
-        regularization_strength: Optional[float] = None,
+        export_rates: ExportRateData | None = None,
+        rate_constants: RateConstantData | None = None,
+        regularization_strength: float | None = None,
         solver: str = "clarabel",
         warm_start: bool = True,
-    ) -> Tuple[DefaultDict[str, List[float]], Dict[str, List[float]]]:
+    ) -> tuple[defaultdict[str, list[float]], dict[str, list[float]]]:
         """
         Solves the optimization problem using Monte Carlo simulation.
 
@@ -710,8 +709,8 @@ class SampleNetworkUnmixer:
             A higher value results in a smoother solution with more emphasis on the regularization terms.
             A lower value results in a solution that fits the observed data more closely but may `overfit' data.
         """
-        predictions_down_mc: DefaultDict[str, List[float]] = defaultdict(list)
-        predictions_up_mc: DefaultDict[str, List[float]] = defaultdict(list)
+        predictions_down_mc: defaultdict[str, list[float]] = defaultdict(list)
+        predictions_up_mc: defaultdict[str, list[float]] = defaultdict(list)
 
         for _ in tqdm.tqdm(range(num_repeats), total=num_repeats):
             observation_data_resampled = self._resample_observations(
@@ -823,8 +822,8 @@ def get_element_obs(element: str, obs_data: pd.DataFrame) -> ElementData:
 def forward_model(
     sample_network: nx.DiGraph,
     upstream_concentrations: ElementData,
-    export_rates: Optional[ExportRateData] = None,
-    rate_constants: Optional[RateConstantData] = None,
+    export_rates: ExportRateData | None = None,
+    rate_constants: RateConstantData | None = None,
 ) -> ElementData:
     """Predicts the downstream concentration at sample sites using a forward model.
     Args:
@@ -881,11 +880,11 @@ def forward_model(
 
 def mix_downstream(
     sample_network: nx.DiGraph,
-    areas: Dict[str, npt.NDArray[np.float64]],
+    areas: dict[str, npt.NDArray[np.float64]],
     concentration_map: npt.NDArray[np.float64],
-    export_rates: Optional[ExportRateData] = None,
-    rate_constants: Optional[RateConstantData] = None,
-) -> Tuple[ElementData, ElementData]:
+    export_rates: ExportRateData | None = None,
+    rate_constants: RateConstantData | None = None,
+) -> tuple[ElementData, ElementData]:
     """Mixes a given concentration map along drainage, predicting the downstream concentration at sample sites
     Args:
         sample_network: A sample_network of localities (see `get_sample_graphs`)
@@ -912,7 +911,7 @@ def mix_downstream(
 def get_unique_upstream_areas(
     sample_network: nx.DiGraph,
     labels: npt.NDArray[np.int_],
-) -> Dict[str, npt.NDArray[np.bool_]]:
+) -> dict[str, npt.NDArray[np.bool_]]:
     """
     Generates a dictionary mapping sample numbers to unique upstream areas as boolean masks.
 
@@ -932,8 +931,8 @@ def plot_sweep_of_regularizer_strength(
     min_: float,
     max_: float,
     trial_num: int,
-    export_rates: Optional[ExportRateData] = None,
-    rate_constants: Optional[RateConstantData] = None,
+    export_rates: ExportRateData | None = None,
+    rate_constants: RateConstantData | None = None,
 ) -> None:
     """
     Plot a sweep of regularization strengths and their impact on roughness and data misfit.
@@ -980,8 +979,8 @@ def plot_sweep_of_regularizer_strength(
 
 
 def get_upstream_concentration_map(
-    areas: Dict[str, npt.NDArray[np.bool_]],
-    upstream_preds: Dict[str, float],
+    areas: dict[str, npt.NDArray[np.bool_]],
+    upstream_preds: dict[str, float],
 ) -> npt.NDArray[np.float64]:
     """
     Generate a two-dimensional map displaying the predicted upstream concentration for a given element for each unique upstream area.

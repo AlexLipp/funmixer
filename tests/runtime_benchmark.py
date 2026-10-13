@@ -1,13 +1,13 @@
+import pickle
 import sys
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import DefaultDict, List, Optional, TypeVar
+from typing import TypeVar
 
 # pyre-fixme[21]: Could not find module `matplotlib.pyplot`.
 import matplotlib.pyplot as plt
 import numpy as np
-import pickle
 import tqdm
 
 # pyre-fixme[21]: Could not find module `random_networks_test`.
@@ -46,23 +46,23 @@ TEST_REPEATS = 10
 
 @dataclass
 class BenchmarkResults:
-    first_solves: DefaultDict[int, List[float]] = field(default_factory=lambda: defaultdict(list))
-    subsequent_solves: DefaultDict[int, List[float]] = field(
+    first_solves: defaultdict[int, list[float]] = field(default_factory=lambda: defaultdict(list))
+    subsequent_solves: defaultdict[int, list[float]] = field(
         default_factory=lambda: defaultdict(list)
     )
-    solver_times: DefaultDict[int, List[float]] = field(default_factory=lambda: defaultdict(list))
+    solver_times: defaultdict[int, list[float]] = field(default_factory=lambda: defaultdict(list))
 
 
-def bavg(x: DefaultDict[int, List[float]], scale: float) -> List[float]:
+def bavg(x: defaultdict[int, list[float]], scale: float) -> list[float]:
     return [scale * float(np.mean(np.array(x[n]))) for n in sorted(x.keys())]
 
 
-def bstd(x: DefaultDict[int, List[float]], scale: float) -> List[float]:
+def bstd(x: defaultdict[int, list[float]], scale: float) -> list[float]:
     return [scale * float(np.std(np.array(x[n]))) for n in sorted(x.keys())]
 
 
 def plot_first_second(
-    network_sizes: List[int],
+    network_sizes: list[int],
     b: BenchmarkResults,
     name: str,
     c1: str,
@@ -93,7 +93,7 @@ def plot_first_second(
 
 
 def plot_solver_time(
-    network_sizes: List[int],
+    network_sizes: list[int],
     b: BenchmarkResults,
     name: str,
     c: str,
@@ -111,12 +111,12 @@ def plot_solver_time(
     )
 
 
-def none_throws(x: Optional[T]) -> T:
+def none_throws(x: T | None) -> T:
     assert x is not None
     return x
 
 
-def run_benchmark(solver: str, sizes: List[int], repeats: int = TEST_REPEATS) -> BenchmarkResults:
+def run_benchmark(solver: str, sizes: list[int], repeats: int = TEST_REPEATS) -> BenchmarkResults:
     ret = BenchmarkResults()
 
     for n in tqdm.tqdm(sizes):
@@ -144,7 +144,7 @@ def run_benchmark(solver: str, sizes: List[int], repeats: int = TEST_REPEATS) ->
 
 def do_benchmark() -> None:
     # Generate list of network sizes
-    network_sizes: List[int] = np.unique(
+    network_sizes: list[int] = np.unique(
         np.rint(
             np.logspace(np.log10(2), np.log10(MAXIMUM_NETWORK_SIZE), NUMBER_OF_NETWORKS)
         ).astype(int)
@@ -170,7 +170,7 @@ def do_benchmark() -> None:
         print(f"Could not benchmark ECOS. Error: {err}")
 
     print("Testing GUROBI solver...")
-    gurobi_bench: Optional[BenchmarkResults] = None
+    gurobi_bench: BenchmarkResults | None = None
     try:
         gurobi_bench = run_benchmark("gurobi", network_sizes)
     except Exception as err:

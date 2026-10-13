@@ -1,8 +1,7 @@
+import numpy
 import setuptools
-
 from Cython.Build import cythonize
 from setuptools import Extension
-import numpy
 
 __version__ = "0.1.1"
 
@@ -25,7 +24,7 @@ setuptools.setup(
     packages=setuptools.find_packages(),
     ext_modules=ext_modules,
     keywords="GIS hydrology raster networks",
-    python_requires=">= 3.8, <4",
+    python_requires=">= 3.11, <4",
     classifiers=[
         "Development Status :: 4 - Beta",
         "Environment :: Console",

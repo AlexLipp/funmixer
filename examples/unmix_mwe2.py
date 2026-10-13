@@ -1,8 +1,9 @@
 import logging
 
 import cvxpy as cp
-import funmixer
 import pandas as pd
+
+import funmixer
 
 logger: logging.Logger = logging.getLogger()
 logger.addHandler(logging.StreamHandler())

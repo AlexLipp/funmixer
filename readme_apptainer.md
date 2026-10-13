@@ -1,6 +1,6 @@
 # The funmixer apptainer container
 
-This document contains instructions for building and running the funmixer container in apptainer. 
+This document contains instructions for building and running the funmixer container in apptainer.
 
 
 ## First steps: installing apptainer
@@ -27,9 +27,9 @@ $ sudo apt install -y apptainer
 
 ### Installing in Windows (you need Windows subsystem for linux)
 
-To get apptainer in Windows, you need to install the Windows subsystem for Linux. You then choose a linux distribution. If you choose any relatively recent distrubiton (for example Ubuntu 22.04) it will have apptainer installed by default. 
+To get apptainer in Windows, you need to install the Windows subsystem for Linux. You then choose a linux distribution. If you choose any relatively recent distrubiton (for example Ubuntu 22.04) it will have apptainer installed by default.
 
-1. Open a powershell window with admin priviledges. If you are on a managed computer you will need to either ask your IT team for administrator privileges or ask them to install `wsl` on your computer. 
+1. Open a powershell window with admin priviledges. If you are on a managed computer you will need to either ask your IT team for administrator privileges or ask them to install `wsl` on your computer.
 2. Run:
 ```
 wsl install
@@ -47,7 +47,7 @@ wsl install
 
 #### wsl2 troubleshooting
 
-1. wsl sometimes does something funny with a file called `/etc/resolv.conf` if you are running Ubuntu as your wsl operating system. If you are not online it will fail to create this file, and if you are online it will write this file in a way that fails to connect to the internet. Both of which cause various fatal error. 
+1. wsl sometimes does something funny with a file called `/etc/resolv.conf` if you are running Ubuntu as your wsl operating system. If you are not online it will fail to create this file, and if you are online it will write this file in a way that fails to connect to the internet. Both of which cause various fatal error.
 2. To resolve this issue:
   a. First start your Ubuntu system, then write the file:
 
@@ -64,14 +64,14 @@ wsl install
 
 ### Installing in MacOS
 
-1. The developers of this software don't use MacOS, so none of this is tested. 
-2. However, you should be able to install apptainer, so [follow these instructions](https://apptainer.org/docs/admin/main/installation.html#mac). 
+1. The developers of this software don't use MacOS, so none of this is tested.
+2. However, you should be able to install apptainer, so [follow these instructions](https://apptainer.org/docs/admin/main/installation.html#mac).
 
 
 ## Now, build the container
 
 The apptainer container is built using instructions in the `funmixer_apptainer.def`. It assumes you have this file in the base directory of funmixer after cloning. That is `/path/to/this/repo/funmixer/`
-The `.def` file reads the `requirements.yaml` file from a relative path (in this case just `./`) so don't move either the `.def` file or the `requirements.yaml` file. 
+The `.def` file reads the `requirements.yaml` file from a relative path (in this case just `./`) so don't move either the `.def` file or the `requirements.yaml` file.
 
 In the directory with `funmixer_container.def` run:
 
@@ -79,7 +79,7 @@ In the directory with `funmixer_container.def` run:
 $ apptainer build funmixer_container.sif funmixer_container.def
 ```
 
-This will take some time. Even on a fast internet connection it can take 10 minutes. The good news is you only need to do this once. 
+This will take some time. Even on a fast internet connection it can take 10 minutes. The good news is you only need to do this once.
 
 
 ## Now run the container
@@ -92,7 +92,7 @@ To run the container, use
 $ apptainer shell funmixer_container.sif
 ```
 
-The container has its own local filesystem, funmixer is here: `/opt/src/funmixer`. You can go there to run tests. 
+The container has its own local filesystem, funmixer is here: `/opt/src/funmixer`. You can go there to run tests.
 
 ### Mapping a drive to the funmixer container
 
@@ -109,5 +109,3 @@ The path before the `:` is the path on your computer, and the path after is the 
 
 * Version 1.0 Simon Mudd 27-Nov-2025. First version of the container.
 * Version 1.1 Simon Mudd 01-Dec-2025. Changed relative paths, placed the .def file in main repository, and updated instructions.
-
-
