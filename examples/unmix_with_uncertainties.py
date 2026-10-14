@@ -18,7 +18,7 @@ This example
 ------------
 Every measurement carries analytical error, and that error propagates into the recovered
 sources: a sub-basin that contributes little to any downstream sample is poorly constrained.
-Here the observations are perturbed with a 10% relative error and re-unmixed many times; the
+Here the observations are perturbed with a 2% relative error and re-unmixed many times; the
 spread of the answers is the uncertainty. The unmixing itself is the same as in
 `unmix_single_element.py`, and so is the regularization strength.
 
@@ -38,12 +38,12 @@ ELEMENT = "Mg"
 # Display only: cells draining more than this area are drawn as rivers on the maps.
 RIVER_THRESHOLD_KM2 = 100.0
 # Display only: shared by both uncertainty examples so their maps compare directly.
-UNCERTAINTY_MAX = 10_000.0
+UNCERTAINTY_MAX = 2_000.0
 SAMPLE_DATA_FILENAME = "data/sample_data.csv"
 # Method choice: matches `unmix_single_element.py`, which shows how it was picked.
 REGULARIZATION_STRENGTH = 1e-3
 # Assumption: a typical analytical error for sediment geochemistry.
-RELATIVE_ERROR_PERCENT = 10.0
+RELATIVE_ERROR_PERCENT = 2.0
 # Enough repeats for a stable standard deviation; increase for smoother maps.
 NUM_REPEATS = 50
 # Fixed so results are reproducible; the uncertainty should not depend on its value.
@@ -79,7 +79,7 @@ def load_basemap(flowdirs_filename: str, samples: pd.DataFrame) -> dict:
 
 def plot_map(ax: plt.Axes, values: np.ndarray, basemap: dict, label: str, **imshow_kwargs) -> None:
     """
-    Draw a sub-basin map in British National Grid coordinates, zoomed to the sampled area.
+    Draw a sub-basin map in British National Grid coordinates.
 
     Parameters
     ----------
@@ -94,7 +94,6 @@ def plot_map(ax: plt.Axes, values: np.ndarray, basemap: dict, label: str, **imsh
     **imshow_kwargs
         Passed to `imshow`, e.g. `cmap` and `norm`.
     """
-    left, right, _, top = basemap["extent"]
     image = ax.imshow(values, extent=basemap["extent"], **imshow_kwargs)
     # Rivers are one cell wide, too thin to survive imshow's downsampling, so outline them.
     rivers = basemap["rivers"].astype(float)
@@ -110,10 +109,6 @@ def plot_map(ax: plt.Axes, values: np.ndarray, basemap: dict, label: str, **imsh
         basemap["x"], basemap["y"], s=14, c="red", edgecolors="black", linewidths=0.5, zorder=3
     )
 
-    rows, cols = np.nonzero(np.isfinite(values))
-    cell = (right - left) / values.shape[1]
-    ax.set_xlim(left + cols.min() * cell, left + (cols.max() + 1) * cell)
-    ax.set_ylim(top - (rows.max() + 1) * cell, top - rows.min() * cell)
     ax.set_xlabel("Easting (m)")
     ax.set_ylabel("Northing (m)")
     # Arrow-ended colour bar wherever values fall outside the colour limits and are clipped.
@@ -150,15 +145,21 @@ def plot_fit(ax: plt.Axes, observed: dict, predicted: dict) -> None:
 
 
 def main() -> None:
+    print("Reading the samples and building the sample network...")
     samples = pd.read_csv(SAMPLE_DATA_FILENAME)
     sample_network, labels = funmixer.get_sample_graph(FLOWDIRS_FILENAME, samples)
 
+    print("Plotting the sample network...")
     # The sample network: each arrow points from a site to the next site downstream.
     plt.figure(figsize=(15, 10))
     funmixer.plot_network(sample_network)
     observed = funmixer.get_element_obs(ELEMENT, samples)
 
     problem = funmixer.SampleNetworkUnmixer(sample_network=sample_network)
+    print(
+        f"Unmixing {ELEMENT} {NUM_REPEATS} times with {RELATIVE_ERROR_PERCENT:g}% noise "
+        f"added to the observations..."
+    )
     # solve_montecarlo draws from numpy's global random state, so seed that (NPY002).
     np.random.seed(RANDOM_SEED)  # noqa: NPY002
     downstream_mc, upstream_mc = problem.solve_montecarlo(
@@ -171,6 +172,7 @@ def main() -> None:
     upstream_std = {site: np.std(values) for site, values in upstream_mc.items()}
     downstream_mean = {site: np.mean(values) for site, values in downstream_mc.items()}
 
+    print("Mapping the results...")
     areas = funmixer.get_unique_upstream_areas(sample_network, labels)
     basemap = load_basemap(FLOWDIRS_FILENAME, samples)
     source_map = funmixer.get_upstream_concentration_map(areas, upstream_mean)

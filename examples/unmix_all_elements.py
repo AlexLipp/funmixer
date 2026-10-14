@@ -73,7 +73,7 @@ def load_basemap(flowdirs_filename: str, samples: pd.DataFrame) -> dict:
 
 def plot_map(ax: plt.Axes, values: np.ndarray, basemap: dict, label: str, **imshow_kwargs) -> None:
     """
-    Draw a sub-basin map in British National Grid coordinates, zoomed to the sampled area.
+    Draw a sub-basin map in British National Grid coordinates.
 
     Parameters
     ----------
@@ -88,7 +88,6 @@ def plot_map(ax: plt.Axes, values: np.ndarray, basemap: dict, label: str, **imsh
     **imshow_kwargs
         Passed to `imshow`, e.g. `cmap` and `norm`.
     """
-    left, right, _, top = basemap["extent"]
     image = ax.imshow(values, extent=basemap["extent"], **imshow_kwargs)
     # Rivers are one cell wide, too thin to survive imshow's downsampling, so outline them.
     rivers = basemap["rivers"].astype(float)
@@ -104,10 +103,6 @@ def plot_map(ax: plt.Axes, values: np.ndarray, basemap: dict, label: str, **imsh
         basemap["x"], basemap["y"], s=14, c="red", edgecolors="black", linewidths=0.5, zorder=3
     )
 
-    rows, cols = np.nonzero(np.isfinite(values))
-    cell = (right - left) / values.shape[1]
-    ax.set_xlim(left + cols.min() * cell, left + (cols.max() + 1) * cell)
-    ax.set_ylim(top - (rows.max() + 1) * cell, top - rows.min() * cell)
     ax.set_xlabel("Easting (m)")
     ax.set_ylabel("Northing (m)")
     # Arrow-ended colour bar wherever values fall outside the colour limits and are clipped.
@@ -144,14 +139,17 @@ def plot_fit(ax: plt.Axes, observed: dict, predicted: dict) -> None:
 
 
 def main() -> None:
+    print("Reading the samples and building the sample network...")
     samples = pd.read_csv(SAMPLE_DATA_FILENAME)
     sample_network, labels = funmixer.get_sample_graph(FLOWDIRS_FILENAME, samples)
 
+    print("Plotting the sample network...")
     # The sample network: each arrow points from a site to the next site downstream.
     plt.figure(figsize=(15, 10))
     funmixer.plot_network(sample_network)
 
     problem = funmixer.SampleNetworkUnmixer(sample_network=sample_network)
+    print(f"Unmixing every element at regularization strength {REGULARIZATION_STRENGTH:g}...")
     solutions = {}
     for element in funmixer.ELEMENT_LIST:
         if element not in samples.columns:
@@ -169,6 +167,7 @@ def main() -> None:
     sources = pd.DataFrame({el: sol.upstream_preds for el, sol in solutions.items()})
     print(sources.round(1))
 
+    print("Mapping the results...")
     areas = funmixer.get_unique_upstream_areas(sample_network, labels)
     basemap = load_basemap(FLOWDIRS_FILENAME, samples)
     source_map = funmixer.get_upstream_concentration_map(areas, solutions[ELEMENT].upstream_preds)

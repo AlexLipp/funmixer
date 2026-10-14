@@ -934,6 +934,8 @@ def plot_sweep_of_regularizer_strength(
     trial_num: int,
     export_rates: ExportRateData | None = None,
     rate_constants: RateConstantData | None = None,
+    chosen_strength: float | None = None,
+    **solve_kwargs: Any,
 ) -> pd.DataFrame:
     """
     Plot a sweep of regularization strengths and their impact on roughness and data misfit.
@@ -946,6 +948,11 @@ def plot_sweep_of_regularizer_strength(
         trial_num: The number of regularization strengths to try within the specified range.
         export_rates: Dictionary of export rates for each sub-catchment. Defaults to equal export rate in each sub-catchment.
         rate_constants: Dictionary of rate constants for each sub-catchment. Defaults to zero (i.e., conservative behaviour).
+        chosen_strength: If given, the problem is also solved at this strength and the result is
+            marked on the plot as a red circle labelled "chosen strength". It is not added to the
+            returned table.
+        **solve_kwargs: Further arguments passed to every `solve` call, e.g. `data_covariance`
+            for the linear solver, so the curve describes the same problem as the final solve.
 
     Returns:
         One row per regularization strength tried, with columns `regularization_strength`,
@@ -965,6 +972,7 @@ def plot_sweep_of_regularizer_strength(
             regularization_strength=val,
             export_rates=export_rates,
             rate_constants=rate_constants,
+            **solve_kwargs,
         )
         rows.append(
             {
@@ -978,6 +986,22 @@ def plot_sweep_of_regularizer_strength(
     plt.scatter(sweep["roughness"], sweep["misfit"], c="grey")
     for row in sweep.itertuples():
         plt.text(row.roughness, row.misfit, str(round(np.log10(row.regularization_strength), 3)))
+    if chosen_strength is not None:
+        sample_network.solve(
+            element_data,
+            regularization_strength=chosen_strength,
+            export_rates=export_rates,
+            rate_constants=rate_constants,
+            **solve_kwargs,
+        )
+        plt.scatter(
+            sample_network.get_roughness(),
+            sample_network.get_misfit(),
+            c="red",
+            zorder=3,
+            label="chosen strength",
+        )
+        plt.legend()
     plt.xlabel("Roughness")
     plt.ylabel("Data misfit")
     plt.show()

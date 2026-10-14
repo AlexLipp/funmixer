@@ -4,6 +4,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 
+import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 import pandas as pd
@@ -71,3 +72,19 @@ def test_regularizer_sweep_returns_one_row_per_strength(
 
     assert list(sweep.columns) == ["regularization_strength", "roughness", "misfit"]
     assert np.allclose(sweep["regularization_strength"], [1e-3, 1e-2, 1e-1])
+
+
+def test_regularizer_sweep_marks_chosen_strength(
+    network_and_labels: tuple[nx.DiGraph, np.ndarray],
+) -> None:
+    network, _ = network_and_labels
+    upstream = {name: 10.0 * (i + 1) for i, name in enumerate(network.nodes)}
+    downstream = funmixer.forward_model(network, upstream)
+    problem = funmixer.SampleNetworkUnmixer(network)
+
+    funmixer.plot_sweep_of_regularizer_strength(
+        problem, downstream, -3, -1, 3, chosen_strength=1e-2
+    )
+
+    labels = [handle.get_label() for handle in plt.gca().get_legend().legend_handles]
+    assert labels == ["chosen strength"]

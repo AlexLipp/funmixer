@@ -190,8 +190,8 @@ form:
 problem = funmixer.LinearSampleNetworkUnmixer(sample_network, use_regularization=True)
 solution = problem.solve(
     element_data,
-    regularization_strength=1.0,
-    data_covariance=10.0,          # a 10% relative error on the observations
+    regularization_strength=100.0,
+    data_covariance=2.0,           # a 2% relative error on the observations
 )
 solution.upstream_preds        # recovered source concentrations
 solution.upstream_std          # their 1-sigma uncertainties, no Monte Carlo needed
@@ -208,11 +208,11 @@ Where sub-basin areas are very uneven this is large, and the unregularized inver
 produce negative or physically impossible concentrations. `solution.amplification`,
 `solution.condition_number`, `solution.clamped_nodes` and `solution.unconstrained_preds` all
 report on this. On the `Mg` example data, the unregularized inversion clamps 12 of 63 sites at
-zero and would otherwise return concentrations up to 136% by mass. With the settings in
-`examples/unmix_linear.py` (`lambda = 0.1`, 10% data uncertainty) 11 sites still clamp, and
-even at `lambda = 1` six do. Regularization is not optional for this kind of data, and clamped sites need
-care: the constrained estimator is not linear there, so their propagated uncertainties are
-overstated.
+zero and would otherwise return concentrations up to 136% by mass. With 2% data uncertainty,
+all 12 still clamp at `lambda = 1`, and two do at `lambda = 100`, the strength used in
+`examples/unmix_linear.py`. Regularization is not optional for this kind of data, and clamped
+sites need care: the constrained estimator is not linear there, so their propagated
+uncertainties are overstated.
 
 Note that `regularization_strength` is **not** comparable between the two solvers: the linear
 one weights a squared penalty on deviations from the mean model, the non-linear one an
