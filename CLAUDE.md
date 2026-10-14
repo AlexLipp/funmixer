@@ -157,10 +157,14 @@ pytest tests/random_networks_test.py::test_rary_network   # a single test
 python3 tests/synthetic_test.py                      # end-to-end synthetic recovery + plots
 python tests/runtime_benchmark.py run                # ~30 min, caches to benchmark_results.pkl
 python tests/runtime_benchmark.py plot               # plot cached results
-python examples/unmix_mwe.py                         # minimal working example
-python examples/unmix_BDL.py                         # minimal working example, censored data
+python examples/unmix_single_element.py              # start here; other examples in README
 python data/make_bdl_sample_data.py                  # regenerate data/BDL_sample_data.csv
 ```
+
+The `examples/unmix_*.py` scripts deliberately share one template (data description,
+`load_basemap`, `plot_map`, `plot_fit`, figure layout, Mg and colour scales) so their outputs
+compare directly, and each is self-contained rather than importing a shared helper. When
+changing one, make the same change in all of them.
 
 The tests are **property-based** (Hypothesis), not example-based: they generate random balanced and
 R-ary networks up to 100 nodes with log-uniform concentrations and areas over two orders of
@@ -204,7 +208,7 @@ debugging a user's dataset:
 
 An unmerged branch on the remote implements Appendix A of the paper as
 `LinearSampleNetworkUnmixer` / `LinearFunmixerSolution` in `funmixer/linear_unmixer.py`, plus
-`examples/unmix_linear_mwe.py`, `tests/linear_unmixer_test.py`,
+`examples/unmix_linear.py`, `tests/linear_unmixer_test.py`,
 `tests/linear_vs_nonlinear_benchmark.py` and a LaTeX derivation in `docs/linear_unmixing_note.tex`:
 
     https://github.com/AlexLipp/funmixer/tree/LinearFunMixer

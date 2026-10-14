@@ -64,7 +64,7 @@ noisy_samples = pd.read_csv("data/noisy_sample_data.csv")
 # Load sample network
 sample_network, labels = get_sample_graph(
     flowdirs_filename="data/d8.tif",
-    sample_data_filename="data/noisy_sample_data.csv",
+    sample_data="data/noisy_sample_data.csv",
 )
 
 plt.figure(figsize=(15, 10))  # Visualise network
@@ -95,7 +95,7 @@ snap_to_drainage(
 # Load sample network
 sample_network, labels = get_sample_graph(
     flowdirs_filename="data/d8.tif",
-    sample_data_filename="noisy_sample_data_snapped.csv",
+    sample_data="noisy_sample_data_snapped.csv",
 )
 
 plt.figure(figsize=(15, 10))  # Visualise network

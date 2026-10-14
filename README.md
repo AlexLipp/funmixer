@@ -43,7 +43,7 @@ import pandas as pd
 import funmixer
 
 sample_network, labels = funmixer.get_sample_graph(
-    flowdirs_filename="data/d8.tif", sample_data_filename="data/BDL_sample_data.csv"
+    flowdirs_filename="data/d8.tif", sample_data="data/BDL_sample_data.csv"
 )
 # Read as strings so that censored entries such as "<3821.8" survive
 obs_data = pd.read_csv("data/BDL_sample_data.csv", dtype=str, keep_default_na=False)
@@ -145,13 +145,27 @@ python tests/runtime_benchmark.py plot
 
 ## Usage
 
-Some documented example scripts are given in the directory `examples/`, and are run from the root directory of the repository, e.g.,
+The scripts in `examples/` each work through one question about the Cairngorms dataset above.
+Each is self-contained (it needs only `funmixer`, numpy, pandas and matplotlib) and is run from
+the root of the repository, e.g.,
 
 ```
-python examples/unmix_mwe.py
+python examples/unmix_single_element.py
 ```
 
-`examples/unmix_BDL.py` is the equivalent example for data containing below-detection-limit values.
+They share one layout so their outputs can be compared directly. Each one plots the sample
+network, then a map of the recovered Mg sources in British National Grid coordinates
+(with rivers and sample sites, and an uncertainty map where the method gives one) next to
+the observed and predicted downstream concentrations.
+
+| Script | Question it answers |
+|---|---|
+| `unmix_single_element.py` | Where does the Mg in the river sediment come from? Start here. |
+| `unmix_with_uncertainties.py` | How well constrained is each source? (Monte Carlo) |
+| `unmix_linear.py` | The same, by linear least squares with closed-form uncertainties |
+| `unmix_below_detection_limit.py` | What if some measurements are only reported as `<X`? |
+| `unmix_all_elements.py` | The full multi-element signature of every sub-basin |
+| `preprocessing.py` | Checking a D8 raster and snapping sample sites onto the drainage |
 
 ## Choosing a solver
 
@@ -176,8 +190,8 @@ form:
 problem = funmixer.LinearSampleNetworkUnmixer(sample_network, use_regularization=True)
 solution = problem.solve(
     element_data,
-    regularization_strength=1.0,
-    data_covariance=10.0,          # a 10% relative error on the observations
+    regularization_strength=100.0,
+    data_covariance=2.0,           # a 2% relative error on the observations
 )
 solution.upstream_preds        # recovered source concentrations
 solution.upstream_std          # their 1-sigma uncertainties, no Monte Carlo needed
@@ -185,7 +199,7 @@ solution.downstream_covariance # covariance of the modelled observations
 solution.effective_dof         # how many degrees of freedom the data actually constrain
 ```
 
-See `examples/unmix_linear_mwe.py`.
+See `examples/unmix_linear.py`.
 
 **Check the diagnostics before trusting a linear solution.** Inverting `M` amounts to
 differencing each site against its upstream neighbours, and the noise amplification at each
@@ -194,10 +208,11 @@ Where sub-basin areas are very uneven this is large, and the unregularized inver
 produce negative or physically impossible concentrations. `solution.amplification`,
 `solution.condition_number`, `solution.clamped_nodes` and `solution.unconstrained_preds` all
 report on this. On the `Mg` example data, the unregularized inversion clamps 12 of 63 sites at
-zero and would otherwise return concentrations up to 136% by mass; at `lambda = 1` six sites
-still clamp. Regularization is not optional for this kind of data, and clamped sites need
-care: the constrained estimator is not linear there, so their propagated uncertainties are
-overstated.
+zero and would otherwise return concentrations up to 136% by mass. With 2% data uncertainty,
+all 12 still clamp at `lambda = 1`, and two do at `lambda = 100`, the strength used in
+`examples/unmix_linear.py`. Regularization is not optional for this kind of data, and clamped
+sites need care: the constrained estimator is not linear there, so their propagated
+uncertainties are overstated.
 
 Note that `regularization_strength` is **not** comparable between the two solvers: the linear
 one weights a squared penalty on deviations from the mean model, the non-linear one an

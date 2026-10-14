@@ -12,7 +12,7 @@ def main() -> None:
     # Load in Drainage Network
     sample_network, labels = funmixer.get_sample_graph(
         flowdirs_filename="data/synthetic_topo_d8.asc",
-        sample_data_filename="data/synthetic_samples.csv",
+        sample_data="data/synthetic_samples.csv",
     )  # Get upstream basins
 
     plt.figure(figsize=(15, 10))  # Visualise network

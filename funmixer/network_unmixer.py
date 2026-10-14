@@ -254,6 +254,7 @@ def plot_network(G: nx.DiGraph) -> None:
     ag.draw(tempname)
     img = mpimg.imread(tempname)
     plt.imshow(img)
+    plt.axis("off")  # pixel coordinates of the rendered graph are meaningless
     plt.show()
     os.remove(tempname)
 
@@ -933,7 +934,9 @@ def plot_sweep_of_regularizer_strength(
     trial_num: int,
     export_rates: ExportRateData | None = None,
     rate_constants: RateConstantData | None = None,
-) -> None:
+    chosen_strength: float | None = None,
+    **solve_kwargs: Any,
+) -> pd.DataFrame:
     """
     Plot a sweep of regularization strengths and their impact on roughness and data misfit.
 
@@ -945,37 +948,64 @@ def plot_sweep_of_regularizer_strength(
         trial_num: The number of regularization strengths to try within the specified range.
         export_rates: Dictionary of export rates for each sub-catchment. Defaults to equal export rate in each sub-catchment.
         rate_constants: Dictionary of rate constants for each sub-catchment. Defaults to zero (i.e., conservative behaviour).
+        chosen_strength: If given, the problem is also solved at this strength and the result is
+            marked on the plot as a red circle labelled "chosen strength". It is not added to the
+            returned table.
+        **solve_kwargs: Further arguments passed to every `solve` call, e.g. `data_covariance`
+            for the linear solver, so the curve describes the same problem as the final solve.
+
+    Returns:
+        One row per regularization strength tried, with columns `regularization_strength`,
+        `roughness` and `misfit`, so the curve can be inspected or replotted programmatically.
 
     Note:
-        The function performs a sweep of regularization strengths within a specified logspace range and plots their
-        impact on the roughness and data misfit of the sample network. For each regularization strength value, it
-        solves the sample network problem using the default solver and the corresponding regularization
-        strength. It then calculates the roughness and data misfit values using the network's `get_roughness()` and
-        `get_misfit()` methods, respectively.
-
-        The roughness and data misfit values are plotted as a scatter plot, with the regularization strength value
-        displayed as text next to each point. The x-axis represents the roughness values, and the y-axis represents the
-        data misfit values.
-
-        The function also prints the roughness and data misfit values for each regularization strength value.
-
-        Finally, the function displays the scatter plot with appropriate axis labels.
+        For each strength the problem is solved with the default solver, and roughness and
+        misfit are read from the network's `get_roughness()` and `get_misfit()`. They are
+        plotted against each other, each point labelled with log10 of its strength, and the
+        figure is shown. Pick the strength at the "elbow" of this curve.
     """
     vals = np.logspace(min_, max_, num=trial_num)  # regularizer strengths to try
+    rows = []
     for val in tqdm.tqdm(vals, total=len(vals)):
         _ = sample_network.solve(
             element_data,
             regularization_strength=val,
             export_rates=export_rates,
             rate_constants=rate_constants,
+            **solve_kwargs,
         )
-        roughness = sample_network.get_roughness()
-        misfit = sample_network.get_misfit()
-        plt.scatter(roughness, misfit, c="grey")
-        plt.text(roughness, misfit, str(round(np.log10(val), 3)))
+        rows.append(
+            {
+                "regularization_strength": val,
+                "roughness": sample_network.get_roughness(),
+                "misfit": sample_network.get_misfit(),
+            }
+        )
+    sweep = pd.DataFrame(rows)
+
+    plt.scatter(sweep["roughness"], sweep["misfit"], c="grey")
+    for row in sweep.itertuples():
+        plt.text(row.roughness, row.misfit, str(round(np.log10(row.regularization_strength), 3)))
+    if chosen_strength is not None:
+        sample_network.solve(
+            element_data,
+            regularization_strength=chosen_strength,
+            export_rates=export_rates,
+            rate_constants=rate_constants,
+            **solve_kwargs,
+        )
+        plt.scatter(
+            sample_network.get_roughness(),
+            sample_network.get_misfit(),
+            c="red",
+            zorder=3,
+            label="chosen strength",
+        )
+        plt.legend()
     plt.xlabel("Roughness")
     plt.ylabel("Data misfit")
     plt.show()
+    return sweep
 
 
 def get_upstream_concentration_map(
@@ -990,24 +1020,13 @@ def get_upstream_concentration_map(
         upstream_preds: Dictionary of predicted upstream concentrations.
 
     Returns:
-        np.ndarray: A two-dimensional map displaying the predicted upstream concentration for each unique upstream area.
-
-    Note:
-        The function takes two inputs: `areas`, which is a dictionary mapping sample numbers to boolean masks representing
-        the unique upstream areas, and `upstream_preds`, which is a dictionary of predicted upstream concentrations.
-
-        The function initializes an output array (`out`) with the same shape as the boolean masks in `areas`. It then
-        iterates over the sample numbers and corresponding predicted upstream concentrations in `upstream_preds`, and
-        accumulates the concentrations in the respective areas of `out`.
-
-        The resulting `out` array represents a two-dimensional map displaying the predicted upstream concentration for
-        each unique upstream area.
-
+        np.ndarray: A two-dimensional map of the predicted upstream concentration in each unique
+        upstream area. Cells outside every sampled sub-basin are NaN, so they plot as blank
+        rather than as a concentration of zero.
     """
-
-    out = np.zeros(list(areas.values())[0].shape)  # initialise output
+    out = np.full(next(iter(areas.values())).shape, np.nan)
     for sample_name, value in upstream_preds.items():
-        out[areas[sample_name]] += value
+        out[areas[sample_name]] = value
     return out
 
 
