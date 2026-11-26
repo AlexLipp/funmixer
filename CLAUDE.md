@@ -20,9 +20,12 @@ closely:
   `cvxpy_extensions.py`. Undefined at zero, so zero observations must be removed or replaced by the
   caller.
 - **BDL misfit** (not in the paper): for an observation reported as `<X` the misfit is
-  `max(1, d_pred/X)` — flat below the detection limit, identical to the standard misfit above
-  it. Implemented as `cp_bdl_log_ratio` in `bdl_unmixer.py`. Still convex and DPP; see
-  "Censored data" below for why it is nonetheless degenerate without regularization.
+  `1 + K·max(0, d_pred/X − 1)` — flat below the detection limit, slope `K` above it. `K` is
+  `bdl_penalty` (default 1, at which it equals `max(1, d_pred/X)`, identical to the standard
+  misfit above the limit). The linear excess is an *exact* penalty: a finite `K` enforces the
+  limits fully, so there is deliberately no `inf`/hard-constraint mode. Implemented as
+  `cp_bdl_log_ratio` in `bdl_unmixer.py`. Still convex and DPP; see "Censored data" below for
+  why it is nonetheless degenerate without regularization.
 - **Regularization** (§2.4, Eq. 8): the same misfit function applied between each `c_i` and the
   *geometric* mean of the observations, scaled by `λ`. There is deliberately **no** roughness /
   spatial-smoothness term (unlike Lipp et al. 2021) — no convex relative-difference term between two
@@ -102,9 +105,12 @@ change any of them, check the subclass still works:
 
 Traps:
 
-- `BDLSampleNetworkUnmixer.__init__` **must** populate `self._is_bdl` before calling
-  `super().__init__()`, because the base constructor calls `_build_primary_terms`, which calls
-  `_misfit_term`, which reads it.
+- `BDLSampleNetworkUnmixer.__init__` **must** populate `self._is_bdl` and `self._bdl_penalty`
+  before calling `super().__init__()`, because the base constructor calls
+  `_build_primary_terms`, which calls `_misfit_term`, which reads both.
+- `bdl_penalty` is a `cp.Parameter` multiplying the misfit, so the censored `_misfit_term`
+  pins `prediction · (1/DL)` to a fresh parameter-free variable (appending an equality to
+  `self._constraints`) before multiplying — `K * pos(c*rp - 1)` directly is not DPP.
 - Censoring status is baked into the problem structure at build time, so it cannot change
   between solves (`_check_censoring_pattern` enforces this). Observation *values* can, exactly
   as in the base class.

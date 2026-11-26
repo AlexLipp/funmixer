@@ -11,16 +11,26 @@ the measurement says and biases the recovered sources upwards.
 observations use a one-sided misfit::
 
     detected observation:  max(c_pred / c_obs, c_obs / c_pred)   (`cp_log_ratio`)
-    censored observation:  max(1, c_pred / DL)                   (`cp_bdl_log_ratio`)
+    censored observation:  1 + K * max(0, c_pred / DL - 1)      (`cp_bdl_log_ratio`)
 
 The censored form is flat for any prediction at or below the detection limit, encoding
-"any value below the detection limit is equally plausible", and grows in the usual relative
-way above it.
+"any value below the detection limit is equally plausible", and grows linearly above it.
+
+Penalty strength
+----------------
+`K` is the `bdl_penalty` argument of `BDLSampleNetworkUnmixer`. With the default `K = 1` the
+censored misfit equals `max(1, c_pred / DL)`, which rises in the usual relative way above the
+limit. Larger `K` makes exceeding a detection limit more costly relative to misfitting a
+detected observation. Because the penalty has a corner at the limit, it is *exact*: above a
+problem-dependent finite `K`, every censored prediction lands at or below its limit, so a
+moderate value (tens to hundreds) enforces the limits fully. A huge value adds nothing but
+poorer solver conditioning. `K` is a CVXPY parameter, so it can be changed between solves
+without recanonicalising.
 
 Convexity
 ---------
-The one-sided misfit is the pointwise maximum of a constant and a linear function of the
-prediction, so it is DCP-convex and DPP-compliant; the whole problem remains convex. What it
+The one-sided misfit is a constant plus a non-negative multiple of the convex function
+`max(0, x - 1)`, so it is DCP-convex and DPP-compliant; the whole problem remains convex. What it
 loses is *strictness*: inside the flat region every prediction scores identically, so the
 minimiser is not unique and the solver may return an arbitrary point there. Regularisation
 pulls each source concentration towards the geometric mean of the observations and restores
@@ -29,6 +39,7 @@ a well-posed answer, which is why `use_regularization=False` raises a warning he
 
 import warnings
 from dataclasses import dataclass
+from numbers import Real
 from typing import Any
 
 import cvxpy as cp
@@ -92,21 +103,56 @@ class BDLObservation:
 BDLElementData = dict[str, BDLObservation]
 
 
-def cp_bdl_log_ratio(a: cp.Variable, b: ReciprocalParameter) -> cp.Expression:
+def cp_bdl_log_ratio(ratio: cp.Variable, penalty: cp.Parameter) -> cp.Expression:
     """
     Returns the one-sided convex misfit for an observation below the detection limit.
 
-    Evaluates to `max(1, a / b)`: flat (at the perfect-fit value of 1) for any prediction at
-    or below the detection limit, and equal to `cp_log_ratio` above it.
+    Evaluates to `1 + penalty * max(0, ratio - 1)`, where `ratio` is the predicted
+    concentration divided by the detection limit. It is flat (at the perfect-fit value of 1)
+    at or below the limit and rises with slope `penalty` above it. With `penalty = 1` it is
+    exactly `max(1, ratio)`, which equals `cp_log_ratio` above the limit.
 
     Args:
-        a: The CVXPY variable holding the predicted concentration.
-        b: The ReciprocalParameter holding the detection limit.
+        ratio: Parameter-free variable holding prediction / detection limit. It must not
+            itself contain a parameter: a parameter multiplying a parameter-laden expression
+            is not DPP.
+        penalty: Non-negative parameter setting the slope above the detection limit.
 
     Returns:
         A convex, DPP-compliant expression penalising predictions above the detection limit.
     """
-    return cp.maximum(1.0, a * b.rp)
+    # Method choice: a linear (not quadratic) excess penalty. Its corner at the limit makes
+    # it an exact penalty, so a finite `penalty` can enforce the limit fully, and
+    # `penalty = 1` reproduces the original `max(1, ratio)` misfit.
+    return 1 + penalty * cp.pos(ratio - 1)
+
+
+def _validate_bdl_penalty(bdl_penalty: float) -> float:
+    """
+    Check that a BDL penalty strength is usable.
+
+    Args:
+        bdl_penalty: The proposed penalty strength.
+
+    Returns:
+        The penalty as a float.
+
+    Raises:
+        TypeError: If it is not a real number.
+        ValueError: If it is not finite and strictly positive.
+    """
+    if not isinstance(bdl_penalty, Real):
+        raise TypeError(
+            f"bdl_penalty must be a number, got {type(bdl_penalty).__name__} {bdl_penalty!r}."
+        )
+    if not np.isfinite(bdl_penalty) or bdl_penalty <= 0:
+        raise ValueError(
+            f"bdl_penalty must be finite and strictly positive, got {bdl_penalty}. Use 1 for "
+            "the standard one-sided misfit. To hold predictions strictly below their "
+            "detection limits use a large finite value (e.g. 100): the penalty is exact, so "
+            "beyond a problem-dependent threshold the limits are met exactly."
+        )
+    return float(bdl_penalty)
 
 
 def parse_bdl_value(raw: Any, sample_name: str = "<unknown>") -> BDLObservation | None:
@@ -201,6 +247,7 @@ class BDLSampleNetworkUnmixer(SampleNetworkUnmixer):
         observation_data: BDLElementData,
         use_regularization: bool = True,
         rate_constants: RateConstantData | None = None,
+        bdl_penalty: float = 1.0,
     ) -> None:
         """
         Initialize the BDLSampleNetworkUnmixer class.
@@ -213,9 +260,15 @@ class BDLSampleNetworkUnmixer(SampleNetworkUnmixer):
                 recommended - see the module docstring for why unregularized censored
                 problems are degenerate.
             rate_constants: Per-site first-order decay constants. See the base class.
+            bdl_penalty: Slope of the misfit for a censored prediction above its detection
+                limit. 1 is the standard one-sided misfit; larger values hold predictions
+                more firmly below their limits. Can be changed later via the `bdl_penalty`
+                attribute without rebuilding the problem.
 
         Raises:
-            ValueError: If any site in the network has no observation.
+            ValueError: If any site in the network has no observation, or `bdl_penalty` is
+                not finite and strictly positive.
+            TypeError: If `bdl_penalty` is not a real number.
         """
         missing = sorted(str(node) for node in sample_network.nodes if node not in observation_data)
         if missing:
@@ -225,9 +278,10 @@ class BDLSampleNetworkUnmixer(SampleNetworkUnmixer):
                 "observations or remove those sites from the network."
             )
 
-        # NOTE: this must be assigned *before* `super().__init__()`. The base constructor
-        # calls `_build_primary_terms`, which calls `_misfit_term`, which reads this mapping.
+        # NOTE: these must be assigned *before* `super().__init__()`. The base constructor
+        # calls `_build_primary_terms`, which calls `_misfit_term`, which reads both.
         self._is_bdl: dict[str, bool] = {site: obs.is_bdl for site, obs in observation_data.items()}
+        self._bdl_penalty = cp.Parameter(nonneg=True, value=_validate_bdl_penalty(bdl_penalty))
 
         if not use_regularization and any(self._is_bdl.values()):
             warnings.warn(
@@ -247,6 +301,26 @@ class BDLSampleNetworkUnmixer(SampleNetworkUnmixer):
             rate_constants=rate_constants,
         )
 
+    @property
+    def bdl_penalty(self) -> float:
+        """
+        Slope of the misfit for a censored prediction above its detection limit.
+
+        Returns:
+            The current penalty strength.
+        """
+        return float(self._bdl_penalty.value)
+
+    @bdl_penalty.setter
+    def bdl_penalty(self, value: float) -> None:
+        """
+        Change the penalty strength for subsequent solves, without rebuilding the problem.
+
+        Args:
+            value: The new penalty strength; finite and strictly positive.
+        """
+        self._bdl_penalty.value = _validate_bdl_penalty(value)
+
     def _misfit_term(
         self, site_name: str, prediction: cp.Variable, observed: ReciprocalParameter
     ) -> cp.Expression:
@@ -262,7 +336,11 @@ class BDLSampleNetworkUnmixer(SampleNetworkUnmixer):
             A convex expression penalising disagreement between prediction and observation.
         """
         if self._is_bdl[site_name]:
-            return cp_bdl_log_ratio(prediction, observed)
+            # Pin prediction / DL to a parameter-free variable so the penalty parameter can
+            # multiply it and the problem stays DPP (same device as the base class's dummies).
+            ratio = cp.Variable(nonneg=True)
+            self._constraints.append(ratio == prediction * observed.rp)
+            return cp_bdl_log_ratio(ratio, self._bdl_penalty)
         return super()._misfit_term(site_name, prediction, observed)
 
     def _check_censoring_pattern(self, observation_data: BDLElementData) -> None:

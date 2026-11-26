@@ -42,6 +42,15 @@ RIVER_THRESHOLD_KM2 = 100.0
 SAMPLE_DATA_FILENAME = "data/BDL_sample_data.csv"
 # Method choice: matches `unmix_single_element.py`, so the two maps compare directly.
 REGULARIZATION_STRENGTH = 1e-3
+# Slope of the misfit when a censored site's prediction rises above its detection limit.
+# 1 (the default) is the standard one-sided misfit, so a prediction may exceed its limit
+# if that fits the rest of the data better. Optionally, if you want to force every
+# below-detection prediction to stay below its limit, raise this hyperparameter: a
+# moderate value (e.g. 100) is enough, as the penalty enforces the limit exactly beyond a
+# finite threshold. That trusts every "<X" label completely, so a mislabelled sample will
+# drag down its upstream sources; compare results at 1 and 100 to see how much the
+# labels drive the answer.
+BDL_PENALTY = 1.0
 
 
 def load_basemap(flowdirs_filename: str, samples: pd.DataFrame) -> dict:
@@ -164,7 +173,9 @@ def main() -> None:
     n_censored = sum(obs.is_bdl for obs in observed.values())
     print(f"{ELEMENT}: {n_censored} of {len(observed)} observations are below detection.")
 
-    problem = funmixer.BDLSampleNetworkUnmixer(sample_network, observation_data=observed)
+    problem = funmixer.BDLSampleNetworkUnmixer(
+        sample_network, observation_data=observed, bdl_penalty=BDL_PENALTY
+    )
     print(f"Unmixing {ELEMENT} at regularization strength {REGULARIZATION_STRENGTH:g}...")
     solution = problem.solve(observed, regularization_strength=REGULARIZATION_STRENGTH)
 
