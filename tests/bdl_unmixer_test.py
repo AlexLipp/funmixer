@@ -9,6 +9,7 @@ below a detection limit (see `funmixer/bdl_unmixer.py` for the full argument).
 
 import warnings
 
+import cvxpy as cp
 import numpy as np
 import pandas as pd
 import pytest
@@ -254,17 +255,30 @@ def test_problem_stays_convex_and_dpp_with_mixed_censoring(simple_network_and_da
 
 def test_bdl_misfit_expression_is_convex_and_dpp() -> None:
     """`cp_bdl_log_ratio` itself is DCP-convex and DPP-compliant."""
-    import cvxpy as cp
+    ratio = cp.Variable(nonneg=True)
+    penalty = cp.Parameter(nonneg=True, value=10.0)
 
-    from funmixer.cvxpy_extensions import ReciprocalParameter
-
-    prediction = cp.Variable(pos=True)
-    limit = ReciprocalParameter(pos=True)
-    limit.value = 2.0
-
-    expression = cp_bdl_log_ratio(prediction, limit)
+    expression = cp_bdl_log_ratio(ratio, penalty)
     assert expression.is_convex()
     assert expression.is_dcp(dpp=True)
+
+
+@pytest.mark.parametrize("ratio", [0.01, 0.5, 1.0, 1.5, 10.0])
+def test_unit_bdl_penalty_equals_original_misfit(ratio: float) -> None:
+    """With `penalty = 1` the misfit is exactly the original `max(1, prediction / DL)`."""
+    ratio_variable = cp.Variable(nonneg=True, value=ratio)
+    penalty = cp.Parameter(nonneg=True, value=1.0)
+
+    assert np.isclose(cp_bdl_log_ratio(ratio_variable, penalty).value, max(1.0, ratio))
+
+
+@pytest.mark.parametrize("ratio, expected", [(0.5, 1.0), (1.0, 1.0), (1.5, 6.0), (3.0, 21.0)])
+def test_bdl_penalty_steepens_only_above_limit(ratio: float, expected: float) -> None:
+    """A larger penalty leaves the flat region alone and multiplies the slope above it."""
+    ratio_variable = cp.Variable(nonneg=True, value=ratio)
+    penalty = cp.Parameter(nonneg=True, value=10.0)
+
+    assert np.isclose(cp_bdl_log_ratio(ratio_variable, penalty).value, expected)
 
 
 def test_regularization_resolves_degeneracy(simple_network_and_data) -> None:
@@ -286,6 +300,109 @@ def test_regularization_resolves_degeneracy(simple_network_and_data) -> None:
         return float(np.std(np.log([solution.upstream_preds[n] for n in network.nodes])))
 
     assert log_spread(1.0) < log_spread(1e-4)
+
+
+# ---------------------------------------------------------------------------------------
+# Penalty strength
+# ---------------------------------------------------------------------------------------
+
+# A mis-flagged site is censored at this fraction of its true observation, so the detected
+# sites around it pull its prediction above the (wrong) limit unless the penalty resists.
+MISFLAG_FACTOR = 0.3
+
+# Penalty strong enough to enforce the limit exactly on the fixture network. The penalty is
+# exact, so this only needs to clear a finite threshold (about 30 here), not approach infinity.
+STRONG_BDL_PENALTY = 100.0
+
+
+@pytest.fixture
+def misflagged_outlet(simple_network_and_data):
+    """The test network with only its outlet censored, wrongly, below its true value."""
+    network, _, downstream = simple_network_and_data
+    outlet = next(node for node in network.nodes if network.out_degree(node) == 0)
+    observations = {
+        site: BDLObservation(
+            value=value * MISFLAG_FACTOR if site == outlet else value, is_bdl=site == outlet
+        )
+        for site, value in downstream.items()
+    }
+    return network, observations, outlet
+
+
+def outlet_prediction_over_limit(
+    problem: BDLSampleNetworkUnmixer, observations: funmixer.BDLElementData, outlet: str
+) -> float:
+    """Solve `problem` and return the outlet's prediction divided by its detection limit."""
+    solution = problem.solve(observations, regularization_strength=REGULARIZATION_STRENGTH)
+    return solution.downstream_preds[outlet] / observations[outlet].value
+
+
+def test_stronger_bdl_penalty_reduces_exceedance(misflagged_outlet) -> None:
+    """Raising the penalty pushes a mis-flagged prediction progressively down to its limit."""
+    network, observations, outlet = misflagged_outlet
+
+    ratios = []
+    for penalty in (1.0, 3.0, 10.0):
+        problem = BDLSampleNetworkUnmixer(
+            sample_network=network, observation_data=observations, bdl_penalty=penalty
+        )
+        ratios.append(outlet_prediction_over_limit(problem, observations, outlet))
+
+    assert ratios[0] > 1 + SOLVER_SLACK  # the default penalty does let the limit be exceeded
+    assert ratios[0] > ratios[1] > ratios[2]
+
+
+def test_strong_bdl_penalty_enforces_limit(misflagged_outlet) -> None:
+    """A large finite penalty holds even a wrongly censored prediction at or below its limit."""
+    network, observations, outlet = misflagged_outlet
+    problem = BDLSampleNetworkUnmixer(
+        sample_network=network, observation_data=observations, bdl_penalty=STRONG_BDL_PENALTY
+    )
+
+    assert outlet_prediction_over_limit(problem, observations, outlet) <= 1 + SOLVER_SLACK
+
+
+def test_bdl_penalty_can_change_without_rebuilding(misflagged_outlet) -> None:
+    """The penalty is a CVXPY parameter, so setting it re-solves the same problem object."""
+    network, observations, outlet = misflagged_outlet
+    problem = BDLSampleNetworkUnmixer(sample_network=network, observation_data=observations)
+    built_problem = problem._problem
+    outlet_prediction_over_limit(problem, observations, outlet)
+
+    problem.bdl_penalty = STRONG_BDL_PENALTY
+
+    assert outlet_prediction_over_limit(problem, observations, outlet) <= 1 + SOLVER_SLACK
+    assert problem._problem is built_problem
+
+
+@pytest.mark.parametrize("penalty", [0.0, -1.0, np.inf, np.nan])
+def test_invalid_bdl_penalty_rejected_at_construction(simple_network_and_data, penalty) -> None:
+    """The penalty must be finite and strictly positive."""
+    network, _, downstream = simple_network_and_data
+    with pytest.raises(ValueError, match="finite and strictly positive"):
+        BDLSampleNetworkUnmixer(
+            sample_network=network, observation_data=as_detected(downstream), bdl_penalty=penalty
+        )
+
+
+@pytest.mark.parametrize("penalty", [0.0, -1.0, np.inf, np.nan])
+def test_invalid_bdl_penalty_rejected_by_setter(simple_network_and_data, penalty) -> None:
+    """Setting the penalty after construction is validated in the same way."""
+    network, _, downstream = simple_network_and_data
+    problem = BDLSampleNetworkUnmixer(
+        sample_network=network, observation_data=as_detected(downstream)
+    )
+    with pytest.raises(ValueError, match="finite and strictly positive"):
+        problem.bdl_penalty = penalty
+
+
+def test_non_numeric_bdl_penalty_rejected(simple_network_and_data) -> None:
+    """A penalty given as text (e.g. read from a config file unparsed) is a type error."""
+    network, _, downstream = simple_network_and_data
+    with pytest.raises(TypeError, match="must be a number"):
+        BDLSampleNetworkUnmixer(
+            sample_network=network, observation_data=as_detected(downstream), bdl_penalty="10"
+        )
 
 
 # ---------------------------------------------------------------------------------------
